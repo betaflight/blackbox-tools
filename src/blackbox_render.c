@@ -935,12 +935,12 @@ void drawAccelerometerData(cairo_t *cr, int64_t *frame)
     }
 
     if (flightLog->mainFieldIndexes.vbatLatest > -1) {
-        lastVoltage = (lastVoltage * 2 + flightLogVbatADCToMillivolts(flightLog, frame[flightLog->mainFieldIndexes.vbatLatest]) / (1000.0 * fieldMeta.numCells)) / 3;
+        lastVoltage = (lastVoltage * 2 + frame[flightLog->mainFieldIndexes.vbatLatest]) / 3;
 
         cairo_move_to(cr, X_POS_LABEL, options.imageHeight - 8 - (extent.height + 8));
-        cairo_show_text(cr, "Batt. cell");
+        cairo_show_text(cr, "Batt.");
 
-        snprintf(labelBuf, sizeof(labelBuf), "%.2f V", lastVoltage);
+        snprintf(labelBuf, sizeof(labelBuf), "%.2f V", lastVoltage / 10);
 
         cairo_move_to(cr, X_POS_VALUE, options.imageHeight - 8 - (extent.height + 8));
         cairo_show_text(cr, labelBuf);

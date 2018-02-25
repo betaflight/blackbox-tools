@@ -8,9 +8,10 @@ const char * const FLIGHT_LOG_FLIGHT_MODE_NAME[] = {
     "GPS_HOME",
     "GPS_HOLD",
     "HEADFREE",
-    "AUTOTUNE",
+    "UNUSED",
     "PASSTHRU",
-    "SONAR"
+    "RANGEFINDER_MODE",
+    "FAILSAFE_MODE"
 };
 
 const char * const FLIGHT_LOG_FLIGHT_STATE_NAME[] = {
@@ -26,4 +27,6 @@ const char * const FLIGHT_LOG_FAILSAFE_PHASE_NAME[] = {
     "RX_LOSS_DETECTED",
     "LANDING",
     "LANDED"
+    "FAILSAFE_RX_LOSS_MONITORING",
+    "FAILSAFE_RX_LOSS_RECOVERED"
 };

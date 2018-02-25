@@ -807,31 +807,6 @@ static void parseEventFrame(flightLog_t *log, mmapStream_t *stream, bool raw)
         case FLIGHT_LOG_EVENT_SYNC_BEEP:
             data->syncBeep.time = streamReadUnsignedVB(stream) + log->private->timeRolloverAccumulator;
         break;
-        case FLIGHT_LOG_EVENT_AUTOTUNE_CYCLE_START:
-            data->autotuneCycleStart.phase = streamReadByte(stream);
-            data->autotuneCycleStart.cycle = streamReadByte(stream);
-            data->autotuneCycleStart.p = streamReadByte(stream);
-            data->autotuneCycleStart.i = streamReadByte(stream);
-            data->autotuneCycleStart.d = streamReadByte(stream);
-        break;
-        case FLIGHT_LOG_EVENT_AUTOTUNE_CYCLE_RESULT:
-            data->autotuneCycleResult.flags = streamReadByte(stream);
-            data->autotuneCycleResult.p = streamReadByte(stream);
-            data->autotuneCycleResult.i = streamReadByte(stream);
-            data->autotuneCycleResult.d = streamReadByte(stream);
-        break;
-        case FLIGHT_LOG_EVENT_AUTOTUNE_TARGETS:
-            data->autotuneTargets.currentAngle = streamReadS16(stream);
-            data->autotuneTargets.targetAngle = (int8_t) streamReadByte(stream);
-            data->autotuneTargets.targetAngleAtPeak = (int8_t)  streamReadByte(stream);
-            data->autotuneTargets.firstPeakAngle = streamReadS16(stream);
-            data->autotuneTargets.secondPeakAngle = streamReadS16(stream);
-        break;
-        case FLIGHT_LOG_EVENT_GTUNE_CYCLE_RESULT:
-            data->gtuneCycleResult.axis = streamReadByte(stream);
-            data->gtuneCycleResult.gyroAVG = streamReadSignedVB(stream);
-            data->gtuneCycleResult.newP = streamReadS16(stream);
-        break;
         case FLIGHT_LOG_EVENT_INFLIGHT_ADJUSTMENT:
              data->inflightAdjustment.adjustmentFunction = streamReadByte(stream);
              if (data->inflightAdjustment.adjustmentFunction > 127) {

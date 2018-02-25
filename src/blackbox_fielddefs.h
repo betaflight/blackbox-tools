@@ -103,9 +103,10 @@ typedef enum {
     GPS_HOME_MODE   = (1 << 4),
     GPS_HOLD_MODE   = (1 << 5),
     HEADFREE_MODE   = (1 << 6),
-    AUTOTUNE_MODE   = (1 << 7),
+    UNUSED_MODE     = (1 << 7), // old autotune
     PASSTHRU_MODE   = (1 << 8),
-    SONAR_MODE      = (1 << 9),
+    RANGEFINDER_MODE= (1 << 9),
+    FAILSAFE_MODE   = (1 << 10)
 } flightModeFlags_e;
 
 #define FLIGHT_LOG_FLIGHT_MODE_COUNT 10
@@ -128,7 +129,9 @@ typedef enum {
     FAILSAFE_IDLE = 0,
     FAILSAFE_RX_LOSS_DETECTED,
     FAILSAFE_LANDING,
-    FAILSAFE_LANDED
+    FAILSAFE_LANDED,
+    FAILSAFE_RX_LOSS_MONITORING,
+    FAILSAFE_RX_LOSS_RECOVERED
 } failsafePhase_e;
 
 extern const char * const FLIGHT_LOG_FAILSAFE_PHASE_NAME[];
@@ -137,49 +140,15 @@ extern const char * const FLIGHT_LOG_FAILSAFE_PHASE_NAME[];
 
 typedef enum FlightLogEvent {
     FLIGHT_LOG_EVENT_SYNC_BEEP = 0,
-    FLIGHT_LOG_EVENT_AUTOTUNE_CYCLE_START = 10,
-    FLIGHT_LOG_EVENT_AUTOTUNE_CYCLE_RESULT = 11,
-    FLIGHT_LOG_EVENT_AUTOTUNE_TARGETS = 12,
     FLIGHT_LOG_EVENT_INFLIGHT_ADJUSTMENT = 13,
     FLIGHT_LOG_EVENT_LOGGING_RESUME = 14,
-    FLIGHT_LOG_EVENT_GTUNE_CYCLE_RESULT = 20,
+    FLIGHT_LOG_EVENT_FLIGHTMODE = 30, // Add new event type for flight mode status.
     FLIGHT_LOG_EVENT_LOG_END = 255
 } FlightLogEvent;
 
 typedef struct flightLogEvent_syncBeep_t {
     int64_t time;
 } flightLogEvent_syncBeep_t;
-
-typedef struct flightLogEvent_autotuneCycleStart_t {
-    uint8_t phase;
-    uint8_t cycle;
-    uint8_t p;
-    uint8_t i;
-    uint8_t d;
-    uint8_t rising;
-} flightLogEvent_autotuneCycleStart_t;
-
-#define FLIGHT_LOG_EVENT_AUTOTUNE_FLAG_OVERSHOT 1
-#define FLIGHT_LOG_EVENT_AUTOTUNE_FLAG_TIMEDOUT 2
-
-typedef struct flightLogEvent_autotuneCycleResult_t {
-    uint8_t flags;
-    uint8_t p;
-    uint8_t i;
-    uint8_t d;
-} flightLogEvent_autotuneCycleResult_t;
-
-typedef struct flightLogEvent_autotuneTargets_t {
-    int16_t currentAngle; // in decidegrees
-    int8_t targetAngle, targetAngleAtPeak; // in degrees
-    int16_t firstPeakAngle, secondPeakAngle; // in decidegrees
-} flightLogEvent_autotuneTargets_t;
-
-typedef struct flightLogEvent_gtuneCycleResult_t {
-    uint8_t axis;
-    int32_t gyroAVG;
-    int16_t newP;
-} flightLogEvent_gtuneCycleResult_t;
 
 typedef struct flightLogEvent_inflightAdjustment_t {
     uint8_t adjustmentFunction;
@@ -195,10 +164,6 @@ typedef struct flightLogEvent_loggingResume_t {
 typedef union flightLogEventData_t
 {
     flightLogEvent_syncBeep_t syncBeep;
-    flightLogEvent_autotuneCycleStart_t autotuneCycleStart;
-    flightLogEvent_autotuneCycleResult_t autotuneCycleResult;
-    flightLogEvent_autotuneTargets_t autotuneTargets;
-    flightLogEvent_gtuneCycleResult_t gtuneCycleResult;
     flightLogEvent_inflightAdjustment_t inflightAdjustment;
     flightLogEvent_loggingResume_t loggingResume;
 } flightLogEventData_t;

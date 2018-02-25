@@ -4,3 +4,8 @@
 /.cproject
 /.project
 /dist/
+
+/.vscode/
+
+/visual-studio/.vs/
+/.vs/

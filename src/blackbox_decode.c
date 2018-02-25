@@ -176,24 +176,22 @@ static bool fprintfMainFieldInUnit(flightLog_t *log, FILE *file, int fieldIndex,
      * for a well-known field that corresponds to the given fieldIndex.)
      */
     switch (unit) {
-        case UNIT_VOLTS:
-            if (fieldIndex == log->mainFieldIndexes.vbatLatest) {
-                fprintf(file, "%.3f", flightLogVbatADCToMillivolts(log, (uint16_t)fieldValue) / 1000.0);
-                return true;
-            }
-        break;
         case UNIT_MILLIVOLTS:
-            if (fieldIndex == log->mainFieldIndexes.vbatLatest) {
-                fprintf(file, "%u", flightLogVbatADCToMillivolts(log, (uint16_t)fieldValue));
-                return true;
-            }
-        break;
-        case UNIT_AMPS:
+            // Betaflight already does the ADC conversion
+            fprintf(file, "%3u", (int32_t) fieldValue * 100);
+            return true;
+        case UNIT_VOLTS:
+            // Betaflight already does the ADC conversion
+            fprintf(file, "%.1f", (double) fieldValue / 10);
+            return true;
         case UNIT_MILLIAMPS:
-            if (fieldIndex == log->mainFieldIndexes.amperageLatest) {
-                fprintfMilliampsInUnit(file, flightLogAmperageADCToMilliamps(log, (uint16_t)fieldValue), unit);
-                return true;
-            }
+            // Betaflight already does the ADC conversion
+            fprintf(file, "%3u", (int32_t) fieldValue * 10);
+            return true;
+        case UNIT_AMPS:
+            // Betaflight already does the ADC conversion
+            fprintf(file, "%.2f", (double) fieldValue / 100);
+            return true;
         break;
         case UNIT_CENTIMETERS:
             if (fieldIndex == log->mainFieldIndexes.BaroAlt) {
@@ -283,30 +281,6 @@ void onEvent(flightLog_t *log, flightLogEvent_t *event)
     switch (event->event) {
         case FLIGHT_LOG_EVENT_SYNC_BEEP:
             fprintf(eventFile, "{\"name\":\"Sync beep\", \"time\":%" PRId64 "}\n", event->data.syncBeep.time);
-        break;
-        case FLIGHT_LOG_EVENT_AUTOTUNE_CYCLE_START:
-            fprintf(eventFile, "{\"name\":\"Autotune cycle start\", \"time\":%" PRId64 ", \"data\":{\"phase\":%d,\"cycle\":%d,\"p\":%u,\"i\":%u,\"d\":%u,\"rising\":%d}}\n", lastFrameTime,
-                event->data.autotuneCycleStart.phase, event->data.autotuneCycleStart.cycle & 0x7F /* Top bit used for "rising: */,
-                event->data.autotuneCycleStart.p, event->data.autotuneCycleStart.i, event->data.autotuneCycleStart.d,
-                event->data.autotuneCycleStart.cycle >> 7);
-        break;
-        case FLIGHT_LOG_EVENT_AUTOTUNE_CYCLE_RESULT:
-            fprintf(eventFile, "{\"name\":\"Autotune cycle result\", \"time\":%" PRId64 ", \"data\":{\"overshot\":%s,\"timedout\":%s,\"p\":%u,\"i\":%u,\"d\":%u}}\n", lastFrameTime,
-                event->data.autotuneCycleResult.flags & FLIGHT_LOG_EVENT_AUTOTUNE_FLAG_OVERSHOT ? "true" : "false",
-                event->data.autotuneCycleResult.flags & FLIGHT_LOG_EVENT_AUTOTUNE_FLAG_TIMEDOUT ? "true" : "false",
-                event->data.autotuneCycleResult.p, event->data.autotuneCycleResult.i, event->data.autotuneCycleResult.d);
-        break;
-        case FLIGHT_LOG_EVENT_AUTOTUNE_TARGETS:
-            fprintf(eventFile, "{\"name\":\"Autotune cycle targets\", \"time\":%" PRId64 ", \"data\":{\"currentAngle\":%.1f,\"targetAngle\":%d,\"targetAngleAtPeak\":%d,\"firstPeakAngle\":%.1f,\"secondPeakAngle\":%.1f}}\n", lastFrameTime,
-                event->data.autotuneTargets.currentAngle / 10.0,
-                event->data.autotuneTargets.targetAngle, event->data.autotuneTargets.targetAngleAtPeak,
-                event->data.autotuneTargets.firstPeakAngle / 10.0, event->data.autotuneTargets.secondPeakAngle / 10.0);
-        break;
-        case FLIGHT_LOG_EVENT_GTUNE_CYCLE_RESULT:
-            fprintf(eventFile, "{\"name\":\"Gtune result\", \"time\":%" PRId64 ", \"data\":{\"axis\":%d,\"gyroAVG\":%d,\"newP\":%d}}\n", lastFrameTime,
-                event->data.gtuneCycleResult.axis,
-                event->data.gtuneCycleResult.gyroAVG,
-                event->data.gtuneCycleResult.newP);
         break;
         case FLIGHT_LOG_EVENT_INFLIGHT_ADJUSTMENT:
             fprintf(eventFile, "{\"name\":\"Inflight adjustment\", \"time\":%" PRId64 ", \"data\":{\"adjustmentFunction\":\"%s\",\"value\":", lastFrameTime,
