@@ -916,7 +916,7 @@ void printStats(flightLog_t *log, int logIndex, bool raw, bool limits)
     uint32_t startTimeMS, startTimeSecs, startTimeMins;
     uint32_t endTimeMS, endTimeSecs, endTimeMins;
 
-    uint8_t frameTypes[] = {'I', 'P', 'H', 'G', 'E', 'S'};
+    uint8_t frameTypes[] = {'I', 'P', 'H', 'G', 'E', 'S'}; //I = full,P = partial,H = full GPS,G = partial GPS,E = event,S = Slow
 
     int i;
 
