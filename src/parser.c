@@ -323,15 +323,13 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
         if (c == EOF || c == '\0')
             // Line ended before we saw a newline or it has binary stuff in there that shouldn't be there
             return;
+        valueBuffer[i] = c;
     }
 
     if (!separatorPos)
         return;
 
     lineEnd = stream->pos;
-
-    //Make a duplicate copy of the line so we can null-terminate the two parts
-    memcpy(valueBuffer, lineStart, lineEnd - lineStart);
 
     fieldName = valueBuffer;
     valueBuffer[separatorPos - lineStart] = '\0';
@@ -1338,7 +1336,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                         frameType = getFrameType(command);
 
                         if (frameType) {
-                            streamUnreadChar(private->stream, command);
+                            streamUnreadChar(private->stream);
 
                             if (log->frameDefs['I'].fieldCount == 0) {
                                 fprintf(stderr, "Data file is missing field name definitions\n");
