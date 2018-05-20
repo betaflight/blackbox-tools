@@ -19,10 +19,8 @@
 #include <ctype.h>
 #include <assert.h>
 
-#include "platform.h"
 #include "parser.h"
 #include "tools.h"
-#include "stream.h"
 #include "decoders.h"
 
 #define LOG_START_MARKER "H Product:Blackbox flight data recorder by Nicholas Sherlock\n"
@@ -38,47 +36,6 @@ typedef enum ParserState
     PARSER_STATE_HEADER = 0,
     PARSER_STATE_DATA
 } ParserState;
-
-typedef struct flightLogPrivate_t
-{
-    int dataVersion;
-
-    // Blackbox state:
-    int64_t blackboxHistoryRing[3][FLIGHT_LOG_MAX_FIELDS];
-
-    /* Points into blackboxHistoryRing to give us a circular buffer.
-     *
-     * 0 - space to decode new frames into, 1 - previous frame, 2 - previous previous frame
-     *
-     * Previous frame pointers are NULL when no valid history exists of that age.
-     */
-    int64_t* mainHistory[3];
-    bool mainStreamIsValid;
-    // When 32-bit time values roll over to zero, we add 2^32 to this accumulator so it can be added to the time:
-    int64_t timeRolloverAccumulator;
-
-    int64_t gpsHomeHistory[2][FLIGHT_LOG_MAX_FIELDS]; // 0 - space to decode new frames into, 1 - previous frame
-    bool gpsHomeIsValid;
-
-    //Because these events don't depend on previous events, we don't keep copies of the old state, just the current one:
-    flightLogEvent_t lastEvent;
-    int64_t lastGPS[FLIGHT_LOG_MAX_FIELDS];
-    int64_t lastSlow[FLIGHT_LOG_MAX_FIELDS];
-
-    // How many intentionally un-logged frames did we skip over before we decoded the current frame?
-    uint32_t lastSkippedFrames;
-    
-    // Details about the last main frame that was successfully parsed
-    uint32_t lastMainFrameIteration;
-    int64_t lastMainFrameTime;
-
-    // Event handlers:
-    FlightLogMetadataReady onMetadataReady;
-    FlightLogFrameReady onFrameReady;
-    FlightLogEventReady onEvent;
-
-    mmapStream_t *stream;
-} flightLogPrivate_t;
 
 typedef void (*FlightLogFrameParse)(flightLog_t *log, mmapStream_t *stream, bool raw);
 typedef bool (*FlightLogFrameComplete)(flightLog_t *log, mmapStream_t *stream, uint8_t frameType, const char *frameStart, const char *frameEnd, bool raw);
@@ -366,15 +323,13 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
         if (c == EOF || c == '\0')
             // Line ended before we saw a newline or it has binary stuff in there that shouldn't be there
             return;
+        valueBuffer[i] = c;
     }
 
     if (!separatorPos)
         return;
 
     lineEnd = stream->pos;
-
-    //Make a duplicate copy of the line so we can null-terminate the two parts
-    memcpy(valueBuffer, lineStart, lineEnd - lineStart);
 
     fieldName = valueBuffer;
     valueBuffer[separatorPos - lineStart] = '\0';
@@ -1381,7 +1336,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                         frameType = getFrameType(command);
 
                         if (frameType) {
-                            streamUnreadChar(private->stream, command);
+                            streamUnreadChar(private->stream);
 
                             if (log->frameDefs['I'].fieldCount == 0) {
                                 fprintf(stderr, "Data file is missing field name definitions\n");

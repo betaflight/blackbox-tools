@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include "platform.h"
+#include "stream.h"
 
 #include "blackbox_fielddefs.h"
 
@@ -56,7 +58,7 @@ typedef struct flightLogStatistics_t {
     flightLogFrameStatistics_t frame[256];
 } flightLogStatistics_t;
 
-struct flightLogPrivate_t;
+
 
 /*
  * We provide a list of indexes of well-known fields to save callers the trouble of comparing field name strings
@@ -140,6 +142,8 @@ typedef struct flightLogFrameDef_t {
     int encoding[FLIGHT_LOG_MAX_FIELDS];
 } flightLogFrameDef_t;
 
+struct flightLogPrivate_t;
+
 typedef struct flightLog_t {
     flightLogStatistics_t stats;
 
@@ -163,9 +167,52 @@ typedef struct flightLog_t {
     struct flightLogPrivate_t *private;
 } flightLog_t;
 
+
+
 typedef void (*FlightLogMetadataReady)(flightLog_t *log);
 typedef void (*FlightLogFrameReady)(flightLog_t *log, bool frameValid, int64_t *frame, uint8_t frameType, int fieldCount, int frameOffset, int frameSize);
 typedef void (*FlightLogEventReady)(flightLog_t *log, flightLogEvent_t *event);
+
+typedef struct flightLogPrivate_t
+{
+    int dataVersion;
+
+    // Blackbox state:
+    int64_t blackboxHistoryRing[3][FLIGHT_LOG_MAX_FIELDS];
+
+    /* Points into blackboxHistoryRing to give us a circular buffer.
+     *
+     * 0 - space to decode new frames into, 1 - previous frame, 2 - previous previous frame
+     *
+     * Previous frame pointers are NULL when no valid history exists of that age.
+     */
+    int64_t* mainHistory[3];
+    bool mainStreamIsValid;
+    // When 32-bit time values roll over to zero, we add 2^32 to this accumulator so it can be added to the time:
+    int64_t timeRolloverAccumulator;
+
+    int64_t gpsHomeHistory[2][FLIGHT_LOG_MAX_FIELDS]; // 0 - space to decode new frames into, 1 - previous frame
+    bool gpsHomeIsValid;
+
+    //Because these events don't depend on previous events, we don't keep copies of the old state, just the current one:
+    flightLogEvent_t lastEvent;
+    int64_t lastGPS[FLIGHT_LOG_MAX_FIELDS];
+    int64_t lastSlow[FLIGHT_LOG_MAX_FIELDS];
+
+    // How many intentionally un-logged frames did we skip over before we decoded the current frame?
+    uint32_t lastSkippedFrames;
+    
+    // Details about the last main frame that was successfully parsed
+    uint32_t lastMainFrameIteration;
+    int64_t lastMainFrameTime;
+
+    // Event handlers:
+    FlightLogMetadataReady onMetadataReady;
+    FlightLogFrameReady onFrameReady;
+    FlightLogEventReady onEvent;
+
+    mmapStream_t *stream;
+} flightLogPrivate_t;
 
 flightLog_t* flightLogCreate(int fd);
 
@@ -183,3 +230,4 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
 void flightLogDestroy(flightLog_t *log);
 
 #endif
+

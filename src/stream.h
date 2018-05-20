@@ -26,9 +26,9 @@ mmapStream_t* streamCreate(int fd);
 void streamDestroy(mmapStream_t *stream);
 
 int streamPeekChar(mmapStream_t *stream);
-int streamReadChar(mmapStream_t *stream);
+char streamReadChar(mmapStream_t *stream);
 int streamReadByte(mmapStream_t *stream);
-void streamUnreadChar(mmapStream_t *stream, int c);
+void streamUnreadChar(mmapStream_t *stream);
 
 void streamRead(mmapStream_t *stream, void *buf, int len);
 

@@ -75,10 +75,10 @@ int streamReadByte(mmapStream_t *stream)
 /**
  * Read a char from the stream, or EOF if the end of stream was reached.
  */
-int streamReadChar(mmapStream_t *stream)
+char streamReadChar(mmapStream_t *stream)
 {
     if (stream->pos < stream->end) {
-        int result = *stream->pos;
+        char result = *stream->pos;
         stream->pos++;
         return result;
     }
