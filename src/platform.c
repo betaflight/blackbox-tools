@@ -6,7 +6,6 @@
     #include <sys/stat.h>
 #endif
 
-#include <sys/stat.h>
 
 #ifndef WIN32
     #define POSIX
@@ -119,18 +118,16 @@ bool directory_create(const char *name)
  */
 bool mmap_file(fileMapping_t *mapping, int fd)
 {
-    struct stat stats;
-
     //Need the file size to complete the mapping
-    if (fd < 0 || fstat(fd, &stats) < 0) {
+    if (fd < 0 || fstat(fd, &mapping->stats) < 0) {
         return 0;
     }
 
     mapping->fd = fd;
-    mapping->size = stats.st_size;
+    mapping->size = mapping->stats.st_size;
 
     // The APIs don't like mapping a file of size zero
-    if (mapping->size > 0) {
+    if (mapping->stats.st_size > 0) {
         #ifdef WIN32
             intptr_t fileHandle = _get_osfhandle(fd);
             mapping->mapping = CreateFileMapping((HANDLE) fileHandle, NULL, PAGE_READONLY, 0, 0, NULL);
@@ -139,21 +136,25 @@ bool mmap_file(fileMapping_t *mapping, int fd)
                 return false;
             }
 
-            mapping->data = MapViewOfFile(mapping->mapping, FILE_MAP_READ, 0, 0, mapping->size);
+            mapping->data = MapViewOfFile(mapping->mapping, FILE_MAP_READ, 0, 0, mapping->stats.st_size);
 
             if (mapping->data == NULL) {
                 CloseHandle(mapping->mapping);
                 return false;
             }
         #else
-            mapping->data = mmap(0, mapping->size, PROT_READ, MAP_PRIVATE, fd, 0);
+            mapping->data = mmap(0, mapping->stats.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
 
             if (mapping->data == MAP_FAILED) {
                 return false;
             }
         #endif
     } else {
+        if (mapping->stats.st_mode & S_IFCHR) {
+            mapping->data = malloc(sizeof(1024 * sizeof(uint8_t)));//A buffer for serial tty data.
+        } else {
         mapping->data = 0;
+        }
     }
 
     return true;

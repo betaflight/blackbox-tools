@@ -183,7 +183,7 @@ mmapStream_t* streamCreate(int fd)
     }
 
     result->data = result->mapping.data;
-    result->size = result->mapping.size;
+    result->size = result->mapping.stats.st_size;
 
     result->start = result->data;
     result->pos = result->start;
