@@ -88,10 +88,8 @@ char streamReadChar(mmapStream_t *stream)
     return EOF;
 }
 
-void streamUnreadChar(mmapStream_t *stream, int c)
+void streamUnreadChar(mmapStream_t *stream)
 {
-    (void) c;
-
     stream->pos--;
 }
 
