@@ -1,8 +1,9 @@
-# use new docker environment
+os:
+  - linux
+
 sudo: false
 
-git:
-  depth: 5
+dist: trusty
 
 addons:
   apt:
@@ -12,16 +13,17 @@ addons:
       - libc6-i386
       - time
 
-# We use cpp for unit tests, and c for the main project.
-language: cpp
+git:
+  depth: 5
+
+language: c
 compiler: gcc
-dist: trusty
 
 before_script:
   - gcc --version
 
 script:
-    - make
+  - make
 
 notifications:
   slack: betaflightgroup:LQSj02nsBEdefcO5UQcLgB0U
