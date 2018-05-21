@@ -4,6 +4,8 @@
     #include <direct.h>
 #else
     #include <sys/stat.h>
+    #include <stdlib.h>
+    #include <stdint.h>
 #endif
 
 
@@ -150,11 +152,16 @@ bool mmap_file(fileMapping_t *mapping, int fd)
             }
         #endif
     } else {
+        #ifndef WIN32
         if (mapping->stats.st_mode & S_IFCHR) {
-            mapping->data = malloc(sizeof(1024 * sizeof(uint8_t)));//A buffer for serial tty data.
+            mapping->data = malloc(1024 * sizeof(uint8_t));//A buffer for serial tty data. This will hold one or one frame.
+            mapping->size = 1024;
         } else {
         mapping->data = 0;
         }
+        #else
+        mapping->data = 0;
+        #endif
     }
 
     return true;
