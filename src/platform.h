@@ -34,6 +34,7 @@
 #else
     // Posix-y systems:
     #include <sys/mman.h>
+    #include <sys/stat.h>
 #endif
 
 #ifdef WIN32
@@ -46,7 +47,8 @@ typedef struct fileMapping_t {
 #endif
 
     int fd;
-    const char *data;
+    char *data;
+    struct stat stats;
     size_t size;
 } fileMapping_t;
 
