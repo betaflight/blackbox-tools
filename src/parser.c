@@ -290,44 +290,49 @@ static void identifyFields(flightLog_t * log, uint8_t frameType, flightLogFrameD
     }
 }
 
-static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
+static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
 {
     char *fieldName, *fieldValue;
     const char *lineStart, *lineEnd, *separatorPos;
-    int i, c;
-    char valueBuffer[1024];
+    char valueBuffer[FLIGHT_LOG_MAX_FRAME_LENGTH] = {0};
     union {
         float f;
         uint32_t u;
     } floatConvert;
 
-    if (streamPeekChar(stream) != ' ')
-        return;
+    if (streamReadChar(stream) != 'H')
+        return 0;
 
-    //Skip the space
-    stream->pos++;
+    if (streamReadChar(stream) != ' ')
+        return 1;
 
     lineStart = stream->pos;
     separatorPos = 0;
+    size_t frameSize=0;
 
-    for (i = 0; i < 1024; i++) {
-        c = streamReadChar(stream);
+    while ( frameSize < FLIGHT_LOG_MAX_FRAME_LENGTH ) {
+        char c = streamReadChar(stream);
 
         if (c == ':' && !separatorPos) {
             separatorPos = stream->pos - 1;
         }
 
-        if (c == '\n')
+        if (c == '\n') {
+            frameSize++;
             break;
+        }
 
-        if (c == EOF || c == '\0')
+        if (c == EOF || c == '\0') {
             // Line ended before we saw a newline or it has binary stuff in there that shouldn't be there
-            return;
-        valueBuffer[i] = c;
+            return frameSize;
+        }
+        valueBuffer[frameSize] = c;
+        frameSize++;
     }
+    frameSize += 2;//We read two bytes above.
 
     if (!separatorPos)
-        return;
+        return frameSize;
 
     lineEnd = stream->pos;
 
@@ -431,6 +436,7 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
 		log->sysConfig.motorOutputLow = motorOutputs[0];
 		log->sysConfig.motorOutputHigh = motorOutputs[1];
      }
+     return frameSize;
 }
 
 /**
@@ -957,7 +963,7 @@ flightLog_t * flightLogCreate(int fd)
         return 0;
     }
 
-    if (private->stream->size == 0) {
+    if (private->stream->size == 0 && (private->stream->mapping.stats.st_mode & S_IFREG) ==  S_IFREG) {
         fprintf(stderr, "Error: This log is zero-bytes long!\n");
 
         streamDestroy(private->stream);
@@ -968,6 +974,7 @@ flightLog_t * flightLogCreate(int fd)
         return 0;
     }
 
+    if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFREG) {
     //First check how many logs are in this one file (each time the FC is rearmed, a new log is appended)
     logSearchStart = private->stream->data;
 
@@ -989,6 +996,11 @@ flightLog_t * flightLogCreate(int fd)
      * We have room for this because the logBegin array has an extra element on the end for it.
      */
     log->logBegin[log->logCount] = private->stream->data + private->stream->size;
+    } else {
+    log->logCount = 1; //one stream 1 log.
+    log->logBegin[0] = private->stream->data;
+    log->logBegin[1] = private->stream->end;
+    }
 
     log->private = private;
 
@@ -1261,11 +1273,7 @@ static void resetSysConfigToDefaults(flightLogSysConfig_t *config)
 bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMetadataReady, FlightLogFrameReady onFrameReady, FlightLogEventReady onEvent, bool raw)
 {
     ParserState parserState = PARSER_STATE_HEADER;
-    bool looksLikeFrameCompleted = false;
-
-    bool prematureEof = false;
-    const char *frameStart = 0;
-    const flightLogFrameType_t *frameType = 0, *lastFrameType = 0;
+    const flightLogFrameType_t *frameType = 0;
 
     flightLogPrivate_t *private = log->private;
 
@@ -1320,120 +1328,89 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
     private->stream->end = log->logBegin[logIndex + 1];
     private->stream->eof = false;
 
+    if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR ) { //prime data buffer with data
+    fillSerialBuffer(private->stream,FLIGHT_LOG_MAX_FRAME_LENGTH);
+    }
+    
     while (1) {
-        int command = streamReadByte(private->stream);
+        char command = streamPeekChar(private->stream);
+        frameType = getFrameType( command );
 
-        switch (parserState) {
-            case PARSER_STATE_HEADER:
-                switch (command) {
-                    case 'H':
-                        parseHeaderLine(log, private->stream);
-                    break;
-                    case EOF:
-                        fprintf(stderr, "Data file contained no events\n");
-                        return false;
-                    default:
-                        frameType = getFrameType(command);
+        if ( command == 'H' && parserState == PARSER_STATE_HEADER ) {
 
-                        if (frameType) {
-                            streamUnreadChar(private->stream);
+            size_t frameSize = parseHeaderLine(log, private->stream);
 
-                            if (log->frameDefs['I'].fieldCount == 0) {
-                                fprintf(stderr, "Data file is missing field name definitions\n");
-                                return false;
-                            }
+            if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR ) { //top up data buffer with data
+                fillSerialBuffer(private->stream,frameSize);
+            }
 
-                            /* Home coord predictors appear in pairs (lat/lon), but the predictor ID is the same for both. It's easier to
-                             * apply the right predictor during parsing if we rewrite the predictor ID for the second half of the pair here:
-                             */
-                            for (int i = 1; i < log->frameDefs['G'].fieldCount; i++) {
-                                if (log->frameDefs['G'].predictor[i - 1] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD &&
-                                        log->frameDefs['G'].predictor[i] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD) {
-                                    log->frameDefs['G'].predictor[i] = FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD_1;
-                                }
-                            }
-
-                            parserState = PARSER_STATE_DATA;
-                            lastFrameType = NULL;
-                            frameStart = private->stream->pos;
-
-                            if (onMetadataReady)
-                                onMetadataReady(log);
-                        } // else skip garbage which apparently precedes the first data frame
-                    break;
+            if ( frameType ) {
+            log->stats.frame[frameType->marker].validCount++;
+            }
+        }
+        if ( command != 'H' && parserState == PARSER_STATE_HEADER ) {//This is run once after the headder, some assertions.
+            if (log->frameDefs['I'].fieldCount == 0) {
+                fprintf(stderr, "Data file is missing field name definitions\n");
+                return false;
+            }
+            /* Home coord predictors appear in pairs (lat/lon), but the predictor ID is the same for both. It's easier to
+                * apply the right predictor during parsing if we rewrite the predictor ID for the second half of the pair here:
+                */
+            for (int i = 1; i < log->frameDefs['G'].fieldCount; i++) {
+                if (log->frameDefs['G'].predictor[i - 1] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD &&
+                        log->frameDefs['G'].predictor[i] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD) {
+                    log->frameDefs['G'].predictor[i] = FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD_1;
                 }
-            break;
-            case PARSER_STATE_DATA:
-                if (lastFrameType) {
-                    const char *frameEnd = private->stream->pos - 1; //-1 because we've already read 1 byte of the next frame
-                    unsigned int lastFrameSize = frameEnd - frameStart;
+            }
 
-                    // Is this the beginning of a new frame?
-                    frameType = command == EOF ? 0 : getFrameType((uint8_t) command);
-                    looksLikeFrameCompleted = frameType || (!prematureEof && command == EOF);
+            if (onMetadataReady) {
+                onMetadataReady(log);
+            }
+            parserState = PARSER_STATE_DATA;
+        }
+        if ( command != 'H' && parserState == PARSER_STATE_DATA ) {
 
-                    // If we see what looks like the beginning of a new frame, assume that the previous frame was valid:
-                    if (lastFrameSize <= FLIGHT_LOG_MAX_FRAME_LENGTH && looksLikeFrameCompleted) {
-                        bool frameAccepted = true;
+            if (private->stream->eof) {
+                break;
+            }
+            unsigned int frameSize=0;
+            if ( frameType ) {
+                streamReadByte(private->stream);//progress pos move past Headder letter H,P,I,G,S,E
+                const char *previousPos = private->stream->pos;
+                frameType->parse(log, private->stream, raw);
+                frameSize = private->stream->pos - previousPos;
 
-                        if (lastFrameType->complete)
-                            frameAccepted = lastFrameType->complete(log, log->private->stream, lastFrameType->marker, frameStart, frameEnd, raw);
+                if (frameSize <= FLIGHT_LOG_MAX_FRAME_LENGTH ) {
 
-                        if (frameAccepted) {
-                            //Update statistics for this frame type
-                            log->stats.frame[lastFrameType->marker].bytes += lastFrameSize;
-                            log->stats.frame[lastFrameType->marker].sizeCount[lastFrameSize]++;
-                            log->stats.frame[lastFrameType->marker].validCount++;
-                        } else {
-                            log->stats.frame[lastFrameType->marker].desyncCount++;
-                        }
+                    bool frameAccepted = frameType->complete(log, log->private->stream, frameType->marker, private->stream->pos ,private->stream->pos + frameSize, raw);
+                    if (frameType->complete && frameAccepted) {
+                        //Update statistics for this frame type
+                        log->stats.frame[frameType->marker].bytes += frameSize+1;//plus 1 because size includes headder letter.
+                        log->stats.frame[frameType->marker].sizeCount[frameSize+1]++;
+                        log->stats.frame[frameType->marker].validCount++;
                     } else {
-                        //The previous frame was corrupt
-
-                        //We need to resynchronise before we can deliver another main frame:
-                        private->mainStreamIsValid = false;
-                        log->stats.frame[lastFrameType->marker].corruptCount++;
+                        log->stats.frame[frameType->marker].desyncCount++;
+                        log->stats.frame[frameType->marker].corruptCount++;
                         log->stats.totalCorruptFrames++;
 
-                        //Let the caller know there was a corrupt frame (don't give them a pointer to the frame data because it is totally worthless)
-                        if (onFrameReady)
-                            onFrameReady(log, false, 0, lastFrameType->marker, 0, frameStart - private->stream->data, lastFrameSize);
-
-                        /*
-                         * Start the search for a frame beginning after the first byte of the previous corrupt frame.
-                         * This way we can find the start of the next frame after the corrupt frame if the corrupt frame
-                         * was truncated.
-                         */
-                        private->stream->pos = frameStart + 1;
-                        lastFrameType = NULL;
-                        prematureEof = false;
-                        private->stream->eof = false;
-                        continue;
+                        if (onFrameReady) {
+                            onFrameReady(log, false, 0, frameType->marker, 0, private->stream->pos - private->stream->data, frameSize);
+                        }
+                        private->stream->pos = previousPos;
                     }
                 }
-
-                if (command == EOF)
-                    goto done;
-
-                frameType = getFrameType((uint8_t) command);
-                frameStart = private->stream->pos - 1;
-
-                if (frameType) {
-                    frameType->parse(log, private->stream, raw);
-                } else {
-                    private->mainStreamIsValid = false;
-                }
-
-                //We shouldn't read an EOF during reading a frame (that'd imply the frame was truncated)
-                if (private->stream->eof)
-                    prematureEof = true;
-
-                lastFrameType = frameType;
-            break;
+            } else {
+                private->mainStreamIsValid = false;
+                streamReadByte(private->stream);
+            }
+            if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR ) { //fill data buffer with data
+                fillSerialBuffer(private->stream,frameSize+1);
+            }
+        } else {
+         parserState = PARSER_STATE_HEADER;
         }
     }
 
-    done:
     log->stats.totalBytes = private->stream->end - private->stream->start;
 
     return true;
