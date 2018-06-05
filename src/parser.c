@@ -963,7 +963,7 @@ flightLog_t * flightLogCreate(int fd)
         return 0;
     }
 
-    if (private->stream->size == 0) {
+    if (private->stream->size == 0 && (private->stream->mapping.stats.st_mode & S_IFREG) ==  S_IFREG) {
         fprintf(stderr, "Error: This log is zero-bytes long!\n");
 
         streamDestroy(private->stream);
@@ -974,6 +974,7 @@ flightLog_t * flightLogCreate(int fd)
         return 0;
     }
 
+    if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFREG) {
     //First check how many logs are in this one file (each time the FC is rearmed, a new log is appended)
     logSearchStart = private->stream->data;
 
@@ -995,6 +996,11 @@ flightLog_t * flightLogCreate(int fd)
      * We have room for this because the logBegin array has an extra element on the end for it.
      */
     log->logBegin[log->logCount] = private->stream->data + private->stream->size;
+    } else {
+    log->logCount = 1; //one stream 1 log.
+    log->logBegin[0] = private->stream->data;
+    log->logBegin[1] = private->stream->end;
+    }
 
     log->private = private;
 
@@ -1322,13 +1328,21 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
     private->stream->end = log->logBegin[logIndex + 1];
     private->stream->eof = false;
 
+    if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR ) { //prime data buffer with data
+    fillSerialBuffer(private->stream,FLIGHT_LOG_MAX_FRAME_LENGTH);
+    }
+    
     while (1) {
         char command = streamPeekChar(private->stream);
         frameType = getFrameType( command );
 
         if ( command == 'H' && parserState == PARSER_STATE_HEADER ) {
 
-            parseHeaderLine(log, private->stream);
+            size_t frameSize = parseHeaderLine(log, private->stream);
+
+            if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR ) { //top up data buffer with data
+                fillSerialBuffer(private->stream,frameSize);
+            }
 
             if ( frameType ) {
             log->stats.frame[frameType->marker].validCount++;
@@ -1388,6 +1402,9 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
             } else {
                 private->mainStreamIsValid = false;
                 streamReadByte(private->stream);
+            }
+            if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR ) { //fill data buffer with data
+                fillSerialBuffer(private->stream,frameSize+1);
             }
         } else {
          parserState = PARSER_STATE_HEADER;
