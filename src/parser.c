@@ -1339,7 +1339,6 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                         frameType = getFrameType(command);
 
                         if (frameType) {
-                            streamUnreadChar(private->stream);
 
                             if (log->frameDefs['I'].fieldCount == 0) {
                                 fprintf(stderr, "Data file is missing field name definitions\n");
