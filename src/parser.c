@@ -301,11 +301,13 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
         uint32_t u;
     } floatConvert;
 
-    if (streamPeekChar(stream) != ' ')
+    if (streamReadByte(stream) != 'H') {
         return;
-
-    //Skip the space
-    stream->pos++;
+    }
+    
+    if (streamReadByte(stream) != ' ') {
+        return;
+    }
 
     lineStart = stream->pos;
     separatorPos = 0;
@@ -317,17 +319,20 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
             separatorPos = stream->pos - 1;
         }
 
-        if (c == '\n')
+        if (c == '\n') {
             break;
+        }
 
-        if (c == EOF || c == '\0')
+        if (c == EOF || c == '\0') {
             // Line ended before we saw a newline or it has binary stuff in there that shouldn't be there
             return;
+        }
         valueBuffer[i] = c;
     }
 
-    if (!separatorPos)
+    if (!separatorPos) {
         return;
+    }
 
     lineEnd = stream->pos;
 
@@ -1319,12 +1324,11 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
     private->stream->pos = private->stream->start;
     private->stream->end = log->logBegin[logIndex + 1];
     private->stream->eof = false;
-
+    int command = 0;
     while (1) {
-        int command = streamReadByte(private->stream);
-
         switch (parserState) {
             case PARSER_STATE_HEADER:
+                command = streamPeekChar(private->stream);
                 switch (command) {
                     case 'H':
                         parseHeaderLine(log, private->stream);
@@ -1364,6 +1368,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                 }
             break;
             case PARSER_STATE_DATA:
+                command = streamReadByte(private->stream);
                 if (lastFrameType) {
                     const char *frameEnd = private->stream->pos - 1; //-1 because we've already read 1 byte of the next frame
                     unsigned int lastFrameSize = frameEnd - frameStart;
