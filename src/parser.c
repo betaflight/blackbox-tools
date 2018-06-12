@@ -1265,7 +1265,6 @@ static void resetSysConfigToDefaults(flightLogSysConfig_t *config)
 bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMetadataReady, FlightLogFrameReady onFrameReady, FlightLogEventReady onEvent, bool raw)
 {
     ParserState parserState = PARSER_STATE_HEADER;
-    bool looksLikeFrameCompleted = false;
 
     bool prematureEof = false;
     const char *frameStart = 0;
@@ -1371,7 +1370,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
 
                     // Is this the beginning of a new frame?
                     frameType = command == EOF ? 0 : getFrameType((uint8_t) command);
-                    looksLikeFrameCompleted = frameType || (!prematureEof && command == EOF);
+                    bool looksLikeFrameCompleted = frameType || (!prematureEof && command == EOF);
 
                     // If we see what looks like the beginning of a new frame, assume that the previous frame was valid:
                     if (lastFrameSize <= FLIGHT_LOG_MAX_FRAME_LENGTH && looksLikeFrameCompleted) {
