@@ -1323,11 +1323,10 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
     private->stream->pos = private->stream->start;
     private->stream->end = log->logBegin[logIndex + 1];
     private->stream->eof = false;
-    int command = 0;
     while (1) {
+    int command = streamPeekChar(private->stream);
         switch (parserState) {
             case PARSER_STATE_HEADER:
-                command = streamPeekChar(private->stream);
                 switch (command) {
                     case 'H':
                         parseHeaderLine(log, private->stream);
@@ -1366,7 +1365,6 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                 }
             break;
             case PARSER_STATE_DATA:
-                command = streamPeekChar(private->stream);
                 if (lastFrameType) {
                     const char *frameEnd = private->stream->pos;
                     unsigned int lastFrameSize = frameEnd - frameStart;
@@ -1419,7 +1417,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                     goto done;
 
                 frameType = getFrameType((uint8_t) command);
-                streamReadByte(private->stream);
+                streamReadByte(private->stream);//Skip over initial frame letter
                 frameStart = private->stream->pos;
 
                 if (frameType) {
