@@ -1355,7 +1355,6 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
 
                             parserState = PARSER_STATE_DATA;
                             frameType = NULL;
-                            frameStart = private->stream->pos;
 
                             if (onMetadataReady)
                                 onMetadataReady(log);
