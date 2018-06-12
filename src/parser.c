@@ -1366,9 +1366,9 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                 }
             break;
             case PARSER_STATE_DATA:
-                command = streamReadByte(private->stream);
+                command = streamPeekChar(private->stream);
                 if (lastFrameType) {
-                    const char *frameEnd = private->stream->pos - 1; //-1 because we've already read 1 byte of the next frame
+                    const char *frameEnd = private->stream->pos;
                     unsigned int lastFrameSize = frameEnd - frameStart;
 
                     // Is this the beginning of a new frame?
@@ -1419,7 +1419,8 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                     goto done;
 
                 frameType = getFrameType((uint8_t) command);
-                frameStart = private->stream->pos - 1;
+                streamReadByte(private->stream);
+                frameStart = private->stream->pos;
 
                 if (frameType) {
                     frameType->parse(log, private->stream, raw);
