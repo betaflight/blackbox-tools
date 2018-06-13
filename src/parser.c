@@ -1263,7 +1263,6 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
 {
     ParserState parserState = PARSER_STATE_HEADER;
 
-    bool prematureEof = false;
     const char *frameStart = 0;
     const flightLogFrameType_t *frameType = 0;
 
@@ -1376,6 +1375,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                 }
 
                 //We shouldn't read an EOF during reading a frame (that'd imply the frame was truncated)
+                bool prematureEof = false;
                 if (private->stream->eof) {
                     prematureEof = true;
                 }
