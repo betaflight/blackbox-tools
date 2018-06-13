@@ -31,6 +31,11 @@
 //Likewise for iteration count
 #define MAXIMUM_ITERATION_JUMP_BETWEEN_FRAMES (500 * 10)
 
+union {
+float f;
+uint32_t u;
+} floatConvert;
+
 typedef enum ParserState
 {
     PARSER_STATE_HEADER = 0,
@@ -303,7 +308,7 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream) {
     const char *lineStart = stream->pos;
     char valueBuffer[FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH];
     const char *separatorPos = 0;
-    size_t i=0;
+    size_t i = 0;
     for ( ; i < FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH; ++i) {
         char c = streamReadChar(stream);
 
@@ -408,10 +413,6 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream) {
         log->sysConfig.currentMeterOffset = currentMeterParams[0];
         log->sysConfig.currentMeterScale = currentMeterParams[1];
     } else if (strcmp(fieldName, "gyro.scale") == 0 || strcmp(fieldName, "gyro_scale") == 0) {
-        union {
-        float f;
-        uint32_t u;
-        } floatConvert;
 
         floatConvert.u = strtoul(fieldValue, 0, 16);
         log->sysConfig.gyroScale = floatConvert.f;
@@ -426,10 +427,10 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream) {
     } else if (strcmp(fieldName, "acc_1G") == 0) {
         log->sysConfig.acc_1G = atoi(fieldValue);
     } else if (strcmp(fieldName, "motorOutput") == 0) {
-    	int motorOutputs[2];
-    	parseCommaSeparatedIntegers(fieldValue, motorOutputs, 2);
-	log->sysConfig.motorOutputLow = motorOutputs[0];
-	log->sysConfig.motorOutputHigh = motorOutputs[1];
+        int motorOutputs[2];
+        parseCommaSeparatedIntegers(fieldValue, motorOutputs, 2);
+        log->sysConfig.motorOutputLow = motorOutputs[0];
+        log->sysConfig.motorOutputHigh = motorOutputs[1];
      }
      return frameSize;
 }
@@ -1262,8 +1263,6 @@ static void resetSysConfigToDefaults(flightLogSysConfig_t *config)
 bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMetadataReady, FlightLogFrameReady onFrameReady, FlightLogEventReady onEvent, bool raw)
 {
     ParserState parserState = PARSER_STATE_HEADER;
-
-    const char *frameStart = 0;
     const flightLogFrameType_t *frameType = 0;
 
     flightLogPrivate_t *private = log->private;
@@ -1320,7 +1319,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
     private->stream->eof = false;
     while (1) {
     int command = streamPeekChar(private->stream);
-        if ( parserState == PARSER_STATE_HEADER ) {
+        if (parserState == PARSER_STATE_HEADER) {
             switch (command) {
                 case 'H':
                     parseHeaderLine(log, private->stream);
@@ -1339,11 +1338,11 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                         }
 
                         /* Home coord predictors appear in pairs (lat/lon), but the predictor ID is the same for both. It's easier to
-                            * apply the right predictor during parsing if we rewrite the predictor ID for the second half of the pair here:
-                            */
+                         * apply the right predictor during parsing if we rewrite the predictor ID for the second half of the pair here:
+                         */
                         for (int i = 1; i < log->frameDefs['G'].fieldCount; i++) {
                             if (log->frameDefs['G'].predictor[i - 1] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD &&
-                                    log->frameDefs['G'].predictor[i] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD) {
+                                log->frameDefs['G'].predictor[i] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD) {
                                 log->frameDefs['G'].predictor[i] = FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD_1;
                             }
                         }
@@ -1357,14 +1356,14 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                     } // else skip garbage which apparently precedes the first data frame
                 break;
             }
-        } else if ( parserState == PARSER_STATE_DATA ) {
+        } else if (parserState == PARSER_STATE_DATA) {
             if (command == EOF) {
                 goto done;
             }
 
             frameType = getFrameType((uint8_t) command);
             streamReadByte(private->stream);//Skip over initial frame letter
-            frameStart = private->stream->pos;
+            const char *frameStart = private->stream->pos;
 
             if (frameType) {
                 frameType->parse(log, private->stream, raw);
@@ -1415,10 +1414,10 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                     }
 
                     /*
-                        * Start the search for a frame beginning after the first byte of the previous corrupt frame.
-                        * This way we can find the start of the next frame after the corrupt frame if the corrupt frame
-                        * was truncated.
-                        */
+                    * Start the search for a frame beginning after the first byte of the previous corrupt frame.
+                    * This way we can find the start of the next frame after the corrupt frame if the corrupt frame
+                    * was truncated.
+                    */
                     private->stream->pos = frameStart + 1;
                     frameType = NULL;
                     prematureEof = false;
