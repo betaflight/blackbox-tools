@@ -290,27 +290,21 @@ static void identifyFields(flightLog_t * log, uint8_t frameType, flightLogFrameD
     }
 }
 
-static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
-{
-
-    union {
-        float f;
-        uint32_t u;
-    } floatConvert;
+static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream) {
 
     if (streamReadByte(stream) != 'H') {
-        return;
+        return 0;
     }
     
     if (streamReadByte(stream) != ' ') {
-        return;
+        return 1;
     }
 
-    char valueBuffer[FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH];
     const char *lineStart = stream->pos;
+    char valueBuffer[FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH];
     const char *separatorPos = 0;
-
-    for (int i = 0; i < FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH; i++) {
+    size_t i=0;
+    for ( ; i < FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH; ++i) {
         char c = streamReadChar(stream);
 
         if (c == ':' && !separatorPos) {
@@ -318,18 +312,19 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
         }
 
         if (c == '\n') {
+            i++;//size includes the newline.
             break;
         }
 
         if (c == EOF || c == '\0') {
             // Line ended before we saw a newline or it has binary stuff in there that shouldn't be there
-            return;
+            return i;
         }
         valueBuffer[i] = c;
     }
-
+    size_t frameSize = i+2; //We have read two bytes previously.
     if (!separatorPos) {
-        return;
+        return frameSize;
     }
 
     const char *lineEnd = stream->pos;
@@ -413,8 +408,12 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
         log->sysConfig.currentMeterOffset = currentMeterParams[0];
         log->sysConfig.currentMeterScale = currentMeterParams[1];
     } else if (strcmp(fieldName, "gyro.scale") == 0 || strcmp(fieldName, "gyro_scale") == 0) {
-        floatConvert.u = strtoul(fieldValue, 0, 16);
+        union {
+        float f;
+        uint32_t u;
+        } floatConvert;
 
+        floatConvert.u = strtoul(fieldValue, 0, 16);
         log->sysConfig.gyroScale = floatConvert.f;
 
         /* Baseflight uses a gyroScale that'll give radians per microsecond as output, whereas Cleanflight produces degrees
@@ -432,6 +431,7 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
 	log->sysConfig.motorOutputLow = motorOutputs[0];
 	log->sysConfig.motorOutputHigh = motorOutputs[1];
      }
+     return frameSize;
 }
 
 /**
@@ -1353,8 +1353,9 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                             parserState = PARSER_STATE_DATA;
                             frameType = NULL;
 
-                            if (onMetadataReady)
+                            if (onMetadataReady) {
                                 onMetadataReady(log);
+                            }
                         } // else skip garbage which apparently precedes the first data frame
                     break;
                 }
@@ -1380,23 +1381,24 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                 }
 
                 if (frameType) {
-                    unsigned int lastFrameSize = private->stream->pos - frameStart;
+                    unsigned int frameSize = private->stream->pos - frameStart;
 
                     // Is this the beginning of a new frame?
                     frameType = command == EOF ? 0 : getFrameType((uint8_t) command);
                     bool looksLikeFrameCompleted = frameType || (!prematureEof && command == EOF);
 
                     // If we see what looks like the beginning of a new frame, assume that the previous frame was valid:
-                    if (lastFrameSize <= FLIGHT_LOG_MAX_FRAME_LENGTH && looksLikeFrameCompleted) {
+                    if (frameSize <= FLIGHT_LOG_MAX_FRAME_LENGTH && looksLikeFrameCompleted) {
                         bool frameAccepted = true;
 
-                        if (frameType->complete)
+                        if (frameType->complete) {
                             frameAccepted = frameType->complete(log, log->private->stream, frameType->marker, frameStart, private->stream->pos, raw);
+                        }
 
                         if (frameAccepted) {
                             //Update statistics for this frame type
-                            log->stats.frame[frameType->marker].bytes += lastFrameSize;
-                            log->stats.frame[frameType->marker].sizeCount[lastFrameSize]++;
+                            log->stats.frame[frameType->marker].bytes += frameSize;
+                            log->stats.frame[frameType->marker].sizeCount[frameSize]++;
                             log->stats.frame[frameType->marker].validCount++;
                         } else {
                             log->stats.frame[frameType->marker].desyncCount++;
@@ -1410,8 +1412,9 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                         log->stats.totalCorruptFrames++;
 
                         //Let the caller know there was a corrupt frame (don't give them a pointer to the frame data because it is totally worthless)
-                        if (onFrameReady)
-                            onFrameReady(log, false, 0, frameType->marker, 0, frameStart - private->stream->data, lastFrameSize);
+                        if (onFrameReady) {
+                            onFrameReady(log, false, 0, frameType->marker, 0, frameStart - private->stream->data, frameSize);
+                        }
 
                         /*
                          * Start the search for a frame beginning after the first byte of the previous corrupt frame.
