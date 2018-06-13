@@ -1320,115 +1320,112 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
     private->stream->eof = false;
     while (1) {
     int command = streamPeekChar(private->stream);
-        switch (parserState) {
-            case PARSER_STATE_HEADER:
-                switch (command) {
-                    case 'H':
-                        parseHeaderLine(log, private->stream);
-                    break;
-                    case EOF:
-                        fprintf(stderr, "Data file contained no events\n");
-                        return false;
-                    default:
-                        frameType = getFrameType(command);
+        if ( parserState == PARSER_STATE_HEADER ) {
+            switch (command) {
+                case 'H':
+                    parseHeaderLine(log, private->stream);
+                break;
+                case EOF:
+                    fprintf(stderr, "Data file contained no events\n");
+                    return false;
+                default:
+                    frameType = getFrameType(command);
 
-                        if (frameType) {
+                    if (frameType) {
 
-                            if (log->frameDefs['I'].fieldCount == 0) {
-                                fprintf(stderr, "Data file is missing field name definitions\n");
-                                return false;
-                            }
-
-                            /* Home coord predictors appear in pairs (lat/lon), but the predictor ID is the same for both. It's easier to
-                             * apply the right predictor during parsing if we rewrite the predictor ID for the second half of the pair here:
-                             */
-                            for (int i = 1; i < log->frameDefs['G'].fieldCount; i++) {
-                                if (log->frameDefs['G'].predictor[i - 1] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD &&
-                                        log->frameDefs['G'].predictor[i] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD) {
-                                    log->frameDefs['G'].predictor[i] = FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD_1;
-                                }
-                            }
-
-                            parserState = PARSER_STATE_DATA;
-                            frameType = NULL;
-
-                            if (onMetadataReady) {
-                                onMetadataReady(log);
-                            }
-                        } // else skip garbage which apparently precedes the first data frame
-                    break;
-                }
-            break;
-            case PARSER_STATE_DATA:
-                if (command == EOF) {
-                    goto done;
-                }
-
-                frameType = getFrameType((uint8_t) command);
-                streamReadByte(private->stream);//Skip over initial frame letter
-                frameStart = private->stream->pos;
-
-                if (frameType) {
-                    frameType->parse(log, private->stream, raw);
-                } else {
-                    private->mainStreamIsValid = false;
-                }
-
-                //We shouldn't read an EOF during reading a frame (that'd imply the frame was truncated)
-                bool prematureEof = false;
-                if (private->stream->eof) {
-                    prematureEof = true;
-                }
-
-                if (frameType) {
-                    unsigned int frameSize = private->stream->pos - frameStart;
-
-                    // Is this the beginning of a new frame?
-                    frameType = command == EOF ? 0 : getFrameType((uint8_t) command);
-                    bool looksLikeFrameCompleted = frameType || (!prematureEof && command == EOF);
-
-                    // If we see what looks like the beginning of a new frame, assume that the previous frame was valid:
-                    if (frameSize <= FLIGHT_LOG_MAX_FRAME_LENGTH && looksLikeFrameCompleted) {
-                        bool frameAccepted = true;
-
-                        if (frameType->complete) {
-                            frameAccepted = frameType->complete(log, log->private->stream, frameType->marker, frameStart, private->stream->pos, raw);
+                        if (log->frameDefs['I'].fieldCount == 0) {
+                            fprintf(stderr, "Data file is missing field name definitions\n");
+                            return false;
                         }
 
-                        if (frameAccepted) {
-                            //Update statistics for this frame type
-                            log->stats.frame[frameType->marker].bytes += frameSize;
-                            log->stats.frame[frameType->marker].sizeCount[frameSize]++;
-                            log->stats.frame[frameType->marker].validCount++;
-                        } else {
-                            log->stats.frame[frameType->marker].desyncCount++;
-                        }
-                    } else {
-                        //The previous frame was corrupt
-
-                        //We need to resynchronise before we can deliver another main frame:
-                        private->mainStreamIsValid = false;
-                        log->stats.frame[frameType->marker].corruptCount++;
-                        log->stats.totalCorruptFrames++;
-
-                        //Let the caller know there was a corrupt frame (don't give them a pointer to the frame data because it is totally worthless)
-                        if (onFrameReady) {
-                            onFrameReady(log, false, 0, frameType->marker, 0, frameStart - private->stream->data, frameSize);
+                        /* Home coord predictors appear in pairs (lat/lon), but the predictor ID is the same for both. It's easier to
+                            * apply the right predictor during parsing if we rewrite the predictor ID for the second half of the pair here:
+                            */
+                        for (int i = 1; i < log->frameDefs['G'].fieldCount; i++) {
+                            if (log->frameDefs['G'].predictor[i - 1] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD &&
+                                    log->frameDefs['G'].predictor[i] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD) {
+                                log->frameDefs['G'].predictor[i] = FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD_1;
+                            }
                         }
 
-                        /*
-                         * Start the search for a frame beginning after the first byte of the previous corrupt frame.
-                         * This way we can find the start of the next frame after the corrupt frame if the corrupt frame
-                         * was truncated.
-                         */
-                        private->stream->pos = frameStart + 1;
+                        parserState = PARSER_STATE_DATA;
                         frameType = NULL;
-                        prematureEof = false;
-                        private->stream->eof = false;
-                        continue;
+
+                        if (onMetadataReady) {
+                            onMetadataReady(log);
+                        }
+                    } // else skip garbage which apparently precedes the first data frame
+                break;
+            }
+        } else if ( parserState == PARSER_STATE_DATA ) {
+            if (command == EOF) {
+                goto done;
+            }
+
+            frameType = getFrameType((uint8_t) command);
+            streamReadByte(private->stream);//Skip over initial frame letter
+            frameStart = private->stream->pos;
+
+            if (frameType) {
+                frameType->parse(log, private->stream, raw);
+            } else {
+                private->mainStreamIsValid = false;
+            }
+
+            //We shouldn't read an EOF during reading a frame (that'd imply the frame was truncated)
+            bool prematureEof = false;
+            if (private->stream->eof) {
+                prematureEof = true;
+            }
+
+            if (frameType) {
+                unsigned int frameSize = private->stream->pos - frameStart;
+
+                // Is this the beginning of a new frame?
+                frameType = command == EOF ? 0 : getFrameType((uint8_t) command);
+                bool looksLikeFrameCompleted = frameType || (!prematureEof && command == EOF);
+
+                // If we see what looks like the beginning of a new frame, assume that the previous frame was valid:
+                if (frameSize <= FLIGHT_LOG_MAX_FRAME_LENGTH && looksLikeFrameCompleted) {
+                    bool frameAccepted = true;
+
+                    if (frameType->complete) {
+                        frameAccepted = frameType->complete(log, log->private->stream, frameType->marker, frameStart, private->stream->pos, raw);
                     }
+
+                    if (frameAccepted) {
+                        //Update statistics for this frame type
+                        log->stats.frame[frameType->marker].bytes += frameSize;
+                        log->stats.frame[frameType->marker].sizeCount[frameSize]++;
+                        log->stats.frame[frameType->marker].validCount++;
+                    } else {
+                        log->stats.frame[frameType->marker].desyncCount++;
+                    }
+                } else {
+                    //The previous frame was corrupt
+
+                    //We need to resynchronise before we can deliver another main frame:
+                    private->mainStreamIsValid = false;
+                    log->stats.frame[frameType->marker].corruptCount++;
+                    log->stats.totalCorruptFrames++;
+
+                    //Let the caller know there was a corrupt frame (don't give them a pointer to the frame data because it is totally worthless)
+                    if (onFrameReady) {
+                        onFrameReady(log, false, 0, frameType->marker, 0, frameStart - private->stream->data, frameSize);
+                    }
+
+                    /*
+                        * Start the search for a frame beginning after the first byte of the previous corrupt frame.
+                        * This way we can find the start of the next frame after the corrupt frame if the corrupt frame
+                        * was truncated.
+                        */
+                    private->stream->pos = frameStart + 1;
+                    frameType = NULL;
+                    prematureEof = false;
+                    private->stream->eof = false;
+                    continue;
                 }
-            break;
+            }
         }
     }
 
