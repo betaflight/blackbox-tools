@@ -427,11 +427,9 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
         log->sysConfig.acc_1G = atoi(fieldValue);
     } else if (strcmp(fieldName, "motorOutput") == 0) {
     	int motorOutputs[2];
-
     	parseCommaSeparatedIntegers(fieldValue, motorOutputs, 2);
-
-		log->sysConfig.motorOutputLow = motorOutputs[0];
-		log->sysConfig.motorOutputHigh = motorOutputs[1];
+	log->sysConfig.motorOutputLow = motorOutputs[0];
+	log->sysConfig.motorOutputHigh = motorOutputs[1];
      }
 }
 
