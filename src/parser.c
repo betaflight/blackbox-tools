@@ -294,40 +294,44 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
 {
     char *fieldName, *fieldValue;
     const char *lineStart, *lineEnd, *separatorPos;
-    int i, c;
     char valueBuffer[1024];
     union {
         float f;
         uint32_t u;
     } floatConvert;
 
-    if (streamPeekChar(stream) != ' ')
+    if (streamReadByte(stream) != 'H') {
         return;
-
-    //Skip the space
-    stream->pos++;
+    }
+    
+    if (streamReadByte(stream) != ' ') {
+        return;
+    }
 
     lineStart = stream->pos;
     separatorPos = 0;
 
-    for (i = 0; i < 1024; i++) {
-        c = streamReadChar(stream);
+    for (int i = 0; i < 1024; i++) {
+        char c = streamReadChar(stream);
 
         if (c == ':' && !separatorPos) {
             separatorPos = stream->pos - 1;
         }
 
-        if (c == '\n')
+        if (c == '\n') {
             break;
+        }
 
-        if (c == EOF || c == '\0')
+        if (c == EOF || c == '\0') {
             // Line ended before we saw a newline or it has binary stuff in there that shouldn't be there
             return;
+        }
         valueBuffer[i] = c;
     }
 
-    if (!separatorPos)
+    if (!separatorPos) {
         return;
+    }
 
     lineEnd = stream->pos;
 
@@ -1261,11 +1265,10 @@ static void resetSysConfigToDefaults(flightLogSysConfig_t *config)
 bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMetadataReady, FlightLogFrameReady onFrameReady, FlightLogEventReady onEvent, bool raw)
 {
     ParserState parserState = PARSER_STATE_HEADER;
-    bool looksLikeFrameCompleted = false;
 
     bool prematureEof = false;
     const char *frameStart = 0;
-    const flightLogFrameType_t *frameType = 0, *lastFrameType = 0;
+    const flightLogFrameType_t *frameType = 0;
 
     flightLogPrivate_t *private = log->private;
 
@@ -1319,10 +1322,8 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
     private->stream->pos = private->stream->start;
     private->stream->end = log->logBegin[logIndex + 1];
     private->stream->eof = false;
-
     while (1) {
-        int command = streamReadByte(private->stream);
-
+    int command = streamPeekChar(private->stream);
         switch (parserState) {
             case PARSER_STATE_HEADER:
                 switch (command) {
@@ -1336,7 +1337,6 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                         frameType = getFrameType(command);
 
                         if (frameType) {
-                            streamUnreadChar(private->stream);
 
                             if (log->frameDefs['I'].fieldCount == 0) {
                                 fprintf(stderr, "Data file is missing field name definitions\n");
@@ -1354,8 +1354,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                             }
 
                             parserState = PARSER_STATE_DATA;
-                            lastFrameType = NULL;
-                            frameStart = private->stream->pos;
+                            frameType = NULL;
 
                             if (onMetadataReady)
                                 onMetadataReady(log);
@@ -1364,59 +1363,13 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                 }
             break;
             case PARSER_STATE_DATA:
-                if (lastFrameType) {
-                    const char *frameEnd = private->stream->pos - 1; //-1 because we've already read 1 byte of the next frame
-                    unsigned int lastFrameSize = frameEnd - frameStart;
-
-                    // Is this the beginning of a new frame?
-                    frameType = command == EOF ? 0 : getFrameType((uint8_t) command);
-                    looksLikeFrameCompleted = frameType || (!prematureEof && command == EOF);
-
-                    // If we see what looks like the beginning of a new frame, assume that the previous frame was valid:
-                    if (lastFrameSize <= FLIGHT_LOG_MAX_FRAME_LENGTH && looksLikeFrameCompleted) {
-                        bool frameAccepted = true;
-
-                        if (lastFrameType->complete)
-                            frameAccepted = lastFrameType->complete(log, log->private->stream, lastFrameType->marker, frameStart, frameEnd, raw);
-
-                        if (frameAccepted) {
-                            //Update statistics for this frame type
-                            log->stats.frame[lastFrameType->marker].bytes += lastFrameSize;
-                            log->stats.frame[lastFrameType->marker].sizeCount[lastFrameSize]++;
-                            log->stats.frame[lastFrameType->marker].validCount++;
-                        } else {
-                            log->stats.frame[lastFrameType->marker].desyncCount++;
-                        }
-                    } else {
-                        //The previous frame was corrupt
-
-                        //We need to resynchronise before we can deliver another main frame:
-                        private->mainStreamIsValid = false;
-                        log->stats.frame[lastFrameType->marker].corruptCount++;
-                        log->stats.totalCorruptFrames++;
-
-                        //Let the caller know there was a corrupt frame (don't give them a pointer to the frame data because it is totally worthless)
-                        if (onFrameReady)
-                            onFrameReady(log, false, 0, lastFrameType->marker, 0, frameStart - private->stream->data, lastFrameSize);
-
-                        /*
-                         * Start the search for a frame beginning after the first byte of the previous corrupt frame.
-                         * This way we can find the start of the next frame after the corrupt frame if the corrupt frame
-                         * was truncated.
-                         */
-                        private->stream->pos = frameStart + 1;
-                        lastFrameType = NULL;
-                        prematureEof = false;
-                        private->stream->eof = false;
-                        continue;
-                    }
+                if (command == EOF) {
+                    goto done;
                 }
 
-                if (command == EOF)
-                    goto done;
-
                 frameType = getFrameType((uint8_t) command);
-                frameStart = private->stream->pos - 1;
+                streamReadByte(private->stream);//Skip over initial frame letter
+                frameStart = private->stream->pos;
 
                 if (frameType) {
                     frameType->parse(log, private->stream, raw);
@@ -1425,10 +1378,56 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                 }
 
                 //We shouldn't read an EOF during reading a frame (that'd imply the frame was truncated)
-                if (private->stream->eof)
+                if (private->stream->eof) {
                     prematureEof = true;
+                }
 
-                lastFrameType = frameType;
+                if (frameType) {
+                    unsigned int lastFrameSize = private->stream->pos - frameStart;
+
+                    // Is this the beginning of a new frame?
+                    frameType = command == EOF ? 0 : getFrameType((uint8_t) command);
+                    bool looksLikeFrameCompleted = frameType || (!prematureEof && command == EOF);
+
+                    // If we see what looks like the beginning of a new frame, assume that the previous frame was valid:
+                    if (lastFrameSize <= FLIGHT_LOG_MAX_FRAME_LENGTH && looksLikeFrameCompleted) {
+                        bool frameAccepted = true;
+
+                        if (frameType->complete)
+                            frameAccepted = frameType->complete(log, log->private->stream, frameType->marker, frameStart, private->stream->pos, raw);
+
+                        if (frameAccepted) {
+                            //Update statistics for this frame type
+                            log->stats.frame[frameType->marker].bytes += lastFrameSize;
+                            log->stats.frame[frameType->marker].sizeCount[lastFrameSize]++;
+                            log->stats.frame[frameType->marker].validCount++;
+                        } else {
+                            log->stats.frame[frameType->marker].desyncCount++;
+                        }
+                    } else {
+                        //The previous frame was corrupt
+
+                        //We need to resynchronise before we can deliver another main frame:
+                        private->mainStreamIsValid = false;
+                        log->stats.frame[frameType->marker].corruptCount++;
+                        log->stats.totalCorruptFrames++;
+
+                        //Let the caller know there was a corrupt frame (don't give them a pointer to the frame data because it is totally worthless)
+                        if (onFrameReady)
+                            onFrameReady(log, false, 0, frameType->marker, 0, frameStart - private->stream->data, lastFrameSize);
+
+                        /*
+                         * Start the search for a frame beginning after the first byte of the previous corrupt frame.
+                         * This way we can find the start of the next frame after the corrupt frame if the corrupt frame
+                         * was truncated.
+                         */
+                        private->stream->pos = frameStart + 1;
+                        frameType = NULL;
+                        prematureEof = false;
+                        private->stream->eof = false;
+                        continue;
+                    }
+                }
             break;
         }
     }
