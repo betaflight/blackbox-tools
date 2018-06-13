@@ -294,7 +294,7 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
 {
     char *fieldName, *fieldValue;
     const char *lineStart, *lineEnd, *separatorPos;
-    char valueBuffer[1024];
+    char valueBuffer[FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH];
     union {
         float f;
         uint32_t u;
@@ -311,7 +311,7 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
     lineStart = stream->pos;
     separatorPos = 0;
 
-    for (int i = 0; i < 1024; i++) {
+    for (int i = 0; i < FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH; i++) {
         char c = streamReadChar(stream);
 
         if (c == ':' && !separatorPos) {
