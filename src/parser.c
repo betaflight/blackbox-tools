@@ -292,8 +292,6 @@ static void identifyFields(flightLog_t * log, uint8_t frameType, flightLogFrameD
 
 static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
 {
-    char *fieldName, *fieldValue;
-    const char *lineStart, *lineEnd, *separatorPos;
     char valueBuffer[FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH];
     union {
         float f;
@@ -308,8 +306,8 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
         return;
     }
 
-    lineStart = stream->pos;
-    separatorPos = 0;
+    const char *lineStart = stream->pos;
+    const char *separatorPos = 0;
 
     for (int i = 0; i < FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH; i++) {
         char c = streamReadChar(stream);
@@ -333,12 +331,12 @@ static void parseHeaderLine(flightLog_t *log, mmapStream_t *stream)
         return;
     }
 
-    lineEnd = stream->pos;
+    const char *lineEnd = stream->pos;
 
-    fieldName = valueBuffer;
+    char *fieldName = valueBuffer;
     valueBuffer[separatorPos - lineStart] = '\0';
 
-    fieldValue = valueBuffer + (separatorPos - lineStart) + 1;
+    char *fieldValue = valueBuffer + (separatorPos - lineStart) + 1;
     valueBuffer[lineEnd - lineStart - 1] = '\0';
 
     if (startsWith(fieldName, "Field ")) {
