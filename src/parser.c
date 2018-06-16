@@ -32,8 +32,8 @@
 #define MAXIMUM_ITERATION_JUMP_BETWEEN_FRAMES (500 * 10)
 
 union {
-float f;
-uint32_t u;
+    float f;
+    uint32_t u;
 } floatConvert;
 
 typedef enum ParserState
