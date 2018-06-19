@@ -22,6 +22,7 @@
 #include "parser.h"
 #include "tools.h"
 #include "decoders.h"
+#include "stream.h"
 
 #define LOG_START_MARKER "H Product:Blackbox flight data recorder by Nicholas Sherlock\n"
 
@@ -35,12 +36,6 @@ union {
     float f;
     uint32_t u;
 } floatConvert;
-
-typedef enum ParserState
-{
-    PARSER_STATE_HEADER = 0,
-    PARSER_STATE_DATA
-} ParserState;
 
 typedef void (*FlightLogFrameParse)(flightLog_t *log, mmapStream_t *stream, bool raw);
 typedef bool (*FlightLogFrameComplete)(flightLog_t *log, mmapStream_t *stream, uint8_t frameType, const char *frameStart, const char *frameEnd, bool raw);
