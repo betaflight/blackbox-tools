@@ -1363,10 +1363,12 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
 
             frameType = getFrameType((uint8_t) command);
             streamReadByte(private->stream);//Skip over initial frame letter
-            const char *frameStart = private->stream->pos;
+            size_t frameSize = 0;
 
             if (frameType) {
+                const char *frameStart = private->stream->pos;
                 frameType->parse(log, private->stream, raw);
+                frameSize = private->stream->pos - frameStart;
             } else {
                 private->mainStreamIsValid = false;
             }
@@ -1378,8 +1380,6 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
             }
 
             if (frameType) {
-                unsigned int frameSize = private->stream->pos - frameStart;
-
                 // Is this the beginning of a new frame?
                 frameType = command == EOF ? 0 : getFrameType((uint8_t) command);
                 bool looksLikeFrameCompleted = frameType || (!prematureEof && command == EOF);
@@ -1389,7 +1389,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                     bool frameAccepted = true;
 
                     if (frameType->complete) {
-                        frameAccepted = frameType->complete(log, log->private->stream, frameType->marker, frameStart, private->stream->pos, raw);
+                        frameAccepted = frameType->complete(log, log->private->stream, frameType->marker, private->stream->pos - frameSize, private->stream->pos, raw);
                     }
 
                     if (frameAccepted) {
@@ -1410,7 +1410,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
 
                     //Let the caller know there was a corrupt frame (don't give them a pointer to the frame data because it is totally worthless)
                     if (onFrameReady) {
-                        onFrameReady(log, false, 0, frameType->marker, 0, frameStart - private->stream->data, frameSize);
+                        onFrameReady(log, false, 0, frameType->marker, 0, (private->stream->pos - frameSize) - private->stream->data, frameSize);
                     }
 
                     /*
@@ -1418,7 +1418,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                     * This way we can find the start of the next frame after the corrupt frame if the corrupt frame
                     * was truncated.
                     */
-                    private->stream->pos = frameStart + 1;
+                    streamReadByte(private->stream);//Move on from corrupt frame.
                     frameType = NULL;
                     prematureEof = false;
                     private->stream->eof = false;
