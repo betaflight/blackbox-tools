@@ -954,7 +954,7 @@ flightLog_t * flightLogCreate(int fd)
         return 0;
     }
 
-    if (private->stream->size == 0) {
+    if (private->stream->size == 0 && (private->stream->mapping.stats.st_mode & S_IFREG) ==  S_IFREG) {
         fprintf(stderr, "Error: This log is zero-bytes long!\n");
 
         streamDestroy(private->stream);
@@ -965,6 +965,7 @@ flightLog_t * flightLogCreate(int fd)
         return 0;
     }
 
+    if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFREG) {
     //First check how many logs are in this one file (each time the FC is rearmed, a new log is appended)
     logSearchStart = private->stream->data;
 
@@ -986,6 +987,11 @@ flightLog_t * flightLogCreate(int fd)
      * We have room for this because the logBegin array has an extra element on the end for it.
      */
     log->logBegin[log->logCount] = private->stream->data + private->stream->size;
+    } else {
+    log->logCount = 1; //one stream 1 log.
+    log->logBegin[0] = private->stream->data;
+    log->logBegin[1] = private->stream->end;
+    }
 
     log->private = private;
 
@@ -1312,44 +1318,49 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
     private->stream->pos = private->stream->start;
     private->stream->end = log->logBegin[logIndex + 1];
     private->stream->eof = false;
+
+    if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) { //prime data buffer with data first time round
+    fillSerialBuffer(private->stream, FLIGHT_LOG_MAX_FRAME_LENGTH, &parserState);
+    }
+    
     while (1) {
     int command = streamPeekChar(private->stream);
         if (parserState == PARSER_STATE_HEADER) {
-            switch (command) {
-                case 'H':
-                    parseHeaderLine(log, private->stream);
-                break;
-                case EOF:
-                    fprintf(stderr, "Data file contained no events\n");
-                    return false;
-                default:
-                    frameType = getFrameType(command);
+            if (command == 'H' ) {
+                size_t frameSize = parseHeaderLine(log, private->stream);
+                if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) { //Move on if in stream.
+                    fillSerialBuffer(private->stream, frameSize, &parserState);
+                }
+            } else if (command == EOF) {
+                fprintf(stderr, "Data file contained no events\n");
+                return false;
+            } else {
+                frameType = getFrameType(command);
 
-                    if (frameType) {
+                if (frameType) {
 
-                        if (log->frameDefs['I'].fieldCount == 0) {
-                            fprintf(stderr, "Data file is missing field name definitions\n");
-                            return false;
+                    if (log->frameDefs['I'].fieldCount == 0) {
+                        fprintf(stderr, "Data file is missing field name definitions\n");
+                        return false;
+                    }
+
+                    /* Home coord predictors appear in pairs (lat/lon), but the predictor ID is the same for both. It's easier to
+                        * apply the right predictor during parsing if we rewrite the predictor ID for the second half of the pair here:
+                        */
+                    for (int i = 1; i < log->frameDefs['G'].fieldCount; i++) {
+                        if (log->frameDefs['G'].predictor[i - 1] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD &&
+                            log->frameDefs['G'].predictor[i] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD) {
+                            log->frameDefs['G'].predictor[i] = FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD_1;
                         }
+                    }
 
-                        /* Home coord predictors appear in pairs (lat/lon), but the predictor ID is the same for both. It's easier to
-                         * apply the right predictor during parsing if we rewrite the predictor ID for the second half of the pair here:
-                         */
-                        for (int i = 1; i < log->frameDefs['G'].fieldCount; i++) {
-                            if (log->frameDefs['G'].predictor[i - 1] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD &&
-                                log->frameDefs['G'].predictor[i] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD) {
-                                log->frameDefs['G'].predictor[i] = FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD_1;
-                            }
-                        }
+                    parserState = PARSER_STATE_DATA;
+                    frameType = NULL;
 
-                        parserState = PARSER_STATE_DATA;
-                        frameType = NULL;
-
-                        if (onMetadataReady) {
-                            onMetadataReady(log);
-                        }
-                    } // else skip garbage which apparently precedes the first data frame
-                break;
+                    if (onMetadataReady) {
+                        onMetadataReady(log);
+                    }
+                } // else skip garbage which apparently precedes the first data frame
             }
         } else if (parserState == PARSER_STATE_DATA) {
             if (command == EOF) {
@@ -1392,6 +1403,9 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                         log->stats.frame[frameType->marker].bytes += frameSize;
                         log->stats.frame[frameType->marker].sizeCount[frameSize]++;
                         log->stats.frame[frameType->marker].validCount++;
+                        if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) { //fill data buffer with data
+                            fillSerialBuffer(private->stream, frameSize+1, &parserState); //+1 as size includes the header letter.
+                        }
                     } else {
                         log->stats.frame[frameType->marker].desyncCount++;
                     }
@@ -1414,6 +1428,9 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                     * was truncated.
                     */
                     streamReadByte(private->stream);//Move on from corrupt frame.
+                    if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) { //fill data buffer with data
+                        fillSerialBuffer(private->stream, 1, &parserState);
+                    }
                     frameType = NULL;
                     prematureEof = false;
                     private->stream->eof = false;
