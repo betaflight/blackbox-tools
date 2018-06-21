@@ -218,14 +218,13 @@ mmapStream_t* streamCreate(int fd)
         return 0;
     }
 
-    result->data = result->mapping.data;
-    result->size = result->mapping.stats.st_size;
-
-    result->start = result->data;
-    result->pos = result->start;
+    result->data   = result->mapping.data;
+    result->size   = result->mapping.size;
+    result->start  = result->mapping.data;
+    result->pos    = result->mapping.data;
     result->bitPos = CHAR_BIT - 1;
-    result->end = result->start + result->size;
-    result->eof = false;
+    result->end    = result->mapping.data + result->mapping.size;
+    result->eof    = false;
 
     return result;
 }
