@@ -408,7 +408,6 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream) {
         log->sysConfig.currentMeterOffset = currentMeterParams[0];
         log->sysConfig.currentMeterScale = currentMeterParams[1];
     } else if (strcmp(fieldName, "gyro.scale") == 0 || strcmp(fieldName, "gyro_scale") == 0) {
-
         floatConvert.u = strtoul(fieldValue, 0, 16);
         log->sysConfig.gyroScale = floatConvert.f;
 
@@ -1261,8 +1260,7 @@ static void resetSysConfigToDefaults(flightLogSysConfig_t *config)
     config->firmwareType = FIRMWARE_TYPE_UNKNOWN;
 }
 
-bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMetadataReady, FlightLogFrameReady onFrameReady, FlightLogEventReady onEvent, bool raw)
-{
+bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMetadataReady, FlightLogFrameReady onFrameReady, FlightLogEventReady onEvent, bool raw) {
     ParserState parserState = PARSER_STATE_HEADER;
     const flightLogFrameType_t *frameType = 0;
 
