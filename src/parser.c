@@ -1319,10 +1319,6 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
     private->stream->end = log->logBegin[logIndex + 1];
     private->stream->eof = false;
 
-    if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) { //prime data buffer with data first time round
-    fillSerialBuffer(private->stream, FLIGHT_LOG_MAX_FRAME_LENGTH, &parserState);
-    }
-    
     while (1) {
     int command = streamPeekChar(private->stream);
         if (parserState == PARSER_STATE_HEADER) {
