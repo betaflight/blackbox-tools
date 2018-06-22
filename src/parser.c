@@ -1320,16 +1320,17 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
 
     while (1) {
         char command = streamPeekChar(private->stream);
-        if (parserState == PARSER_STATE_HEADER) {
-            if (command == 'H') {
+        
+            if (command == 'H' && parserState == PARSER_STATE_HEADER) {
                 size_t frameSize = parseHeaderLine(log, private->stream, &parserState);
                 if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) { //Move on if in stream.
                     fillSerialBuffer(private->stream, frameSize, &parserState);
                 }
             } else if (command == EOF) {
                 fprintf(stderr, "Data file contained no events\n");
-                return false;
-            } else {
+                break;
+            } 
+            if (parserState == PARSER_STATE_TRANSITION) {
                 frameType = getFrameType(command);
 
                 if (frameType) {
@@ -1356,8 +1357,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                         onMetadataReady(log);
                     }
                 } // else skip garbage which apparently precedes the first data frame
-            }
-        } else if (parserState == PARSER_STATE_DATA) {
+            } else if (parserState == PARSER_STATE_DATA) {
             if (command == EOF) {
                 goto done;
             }
@@ -1433,6 +1433,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
                 }
             }
         }
+
     }
 
     done:
