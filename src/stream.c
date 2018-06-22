@@ -22,19 +22,19 @@ void fillSerialBuffer(mmapStream_t *stream,size_t bytesParsedDataSize, ParserSta
 
     bytes_read = bytesParsedDataSize;
 
-    if (bytesParsedDataSize >= FLIGHT_LOG_MAX_FRAME_LENGTH) { // First fill
-        for (size_t i = 0;i < FLIGHT_LOG_MAX_FRAME_LENGTH; ++i) { //fill the rest of the buffer
+    if (bytesParsedDataSize >= FLIGHT_LOG_MAX_FRAME_SERIAL_BUFFER_LENGTH) { // First fill
+        for (size_t i = 0;i < FLIGHT_LOG_MAX_FRAME_SERIAL_BUFFER_LENGTH; ++i) { //fill the rest of the buffer
             int byte = 0;
             read(stream->mapping.fd, &byte, 1);
             stream->mapping.data[i] = byte;
         }
     } else {
-        while (bytes_read < FLIGHT_LOG_MAX_FRAME_LENGTH) { //move data down to beginning of buffer.
+        while (bytes_read < FLIGHT_LOG_MAX_FRAME_SERIAL_BUFFER_LENGTH) { //move data down to beginning of buffer.
             stream->mapping.data[bytes_read - bytesParsedDataSize] = stream->mapping.data[bytes_read];
             bytes_read++;
         }
         size_t topup = bytes_read - bytesParsedDataSize;
-        while (topup < FLIGHT_LOG_MAX_FRAME_LENGTH) { //fill the rest of the buffer
+        while (topup < FLIGHT_LOG_MAX_FRAME_SERIAL_BUFFER_LENGTH) { //fill the rest of the buffer
             int byte = 0;
             read(stream->mapping.fd, &byte, 1 );
             stream->mapping.data[topup] = byte;

@@ -22,7 +22,6 @@
 #include "parser.h"
 #include "tools.h"
 #include "decoders.h"
-#include "stream.h"
 
 #define LOG_START_MARKER "H Product:Blackbox flight data recorder by Nicholas Sherlock\n"
 
@@ -290,7 +289,7 @@ static void identifyFields(flightLog_t * log, uint8_t frameType, flightLogFrameD
     }
 }
 
-static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream) {
+static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream, ParserState *parserState) {
 
     if (streamReadByte(stream) != 'H') {
         return 0;
@@ -331,7 +330,9 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream) {
 
     char *fieldName = valueBuffer;
     valueBuffer[separatorPos - lineStart] = '\0';
-
+    if ( strstr(fieldName,"features") ) {
+        *parserState = PARSER_STATE_TRANSITION;
+    }
     char *fieldValue = valueBuffer + (separatorPos - lineStart) + 1;
     valueBuffer[lineEnd - lineStart - 1] = '\0';
 
@@ -1321,7 +1322,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
         char command = streamPeekChar(private->stream);
         if (parserState == PARSER_STATE_HEADER) {
             if (command == 'H') {
-                size_t frameSize = parseHeaderLine(log, private->stream);
+                size_t frameSize = parseHeaderLine(log, private->stream, &parserState);
                 if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) { //Move on if in stream.
                     fillSerialBuffer(private->stream, frameSize, &parserState);
                 }

@@ -154,8 +154,8 @@ bool mmap_file(fileMapping_t *mapping, int fd)
     } else {
         #ifndef WIN32
         if ((mapping->stats.st_mode & S_IFMT) == S_IFCHR) {
-            mapping->data = malloc(1024 * sizeof(uint8_t));//A buffer for serial tty data. This will hold one or one frame.
-            mapping->size = 1024;
+            mapping->data = malloc(FLIGHT_LOG_MAX_FRAME_SERIAL_BUFFER_LENGTH * sizeof(uint8_t));//A buffer for serial tty data. This will hold one or one frame.
+            mapping->size = FLIGHT_LOG_MAX_FRAME_SERIAL_BUFFER_LENGTH;
             mapping->data[mapping->size-1] = '\0';
         } else {
         mapping->data = 0;

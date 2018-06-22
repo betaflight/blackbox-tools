@@ -1,6 +1,10 @@
 #ifndef PLATFORM_H_
 #define PLATFORM_H_
 
+#define FLIGHT_LOG_MAX_FRAME_LENGTH 256
+#define FLIGHT_LOG_MAX_FRAME_SERIAL_BUFFER_LENGTH 1024
+#define FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH 1024
+
 #include <stdbool.h>
 
 #if defined(__APPLE__)

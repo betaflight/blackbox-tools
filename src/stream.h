@@ -2,8 +2,6 @@
 #define STREAM_H_
 
 #include "platform.h"
-#define FLIGHT_LOG_MAX_FRAME_LENGTH 256
-#define FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH 1024
 
 
 typedef struct mmapStream_t {
@@ -27,6 +25,7 @@ typedef struct mmapStream_t {
 
 typedef enum ParserState {
     PARSER_STATE_HEADER = 0,
+    PARSER_STATE_TRANSITION,
     PARSER_STATE_DATA
 } ParserState;
 
