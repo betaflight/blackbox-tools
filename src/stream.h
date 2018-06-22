@@ -3,7 +3,6 @@
 
 #include "platform.h"
 
-
 typedef struct mmapStream_t {
     fileMapping_t mapping;
 
