@@ -330,7 +330,7 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream, ParserStat
 
     char *fieldName = valueBuffer;
     valueBuffer[separatorPos - lineStart] = '\0';
-    if ( strstr(fieldName,"features") ) {
+    if (strstr(fieldName,"features")) { // This is the last field in the header.
         *parserState = PARSER_STATE_TRANSITION;
     }
     char *fieldValue = valueBuffer + (separatorPos - lineStart) + 1;
