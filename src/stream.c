@@ -4,11 +4,47 @@
 #include <stdbool.h>
 #include <limits.h>
 #include <assert.h>
+#include <unistd.h>
+#include <string.h>
 
 #include "platform.h"
 #include "tools.h"
 
 #include "stream.h"
+
+void fillSerialBuffer(mmapStream_t *stream,size_t bytesParsedDataSize, ParserState *parserState) {
+    size_t bytes_read = 0;
+
+    if (strstr( stream->mapping.data ,"H Data") && *parserState == PARSER_STATE_DATA) { // Always searching for header in stream.
+        *parserState = PARSER_STATE_HEADER;
+        bytesParsedDataSize = strstr(stream->mapping.data, "H Data") - stream->mapping.data; //Jump to start of headder
+    }
+
+    bytes_read = bytesParsedDataSize;
+
+    if (bytesParsedDataSize >= FLIGHT_LOG_MAX_FRAME_SERIAL_BUFFER_LENGTH) { // First fill
+        for (size_t i = 0;i < FLIGHT_LOG_MAX_FRAME_SERIAL_BUFFER_LENGTH; ++i) { //fill the rest of the buffer
+            int byte = 0;
+            read(stream->mapping.fd, &byte, 1);
+            stream->mapping.data[i] = byte;
+        }
+    } else {
+        while (bytes_read < FLIGHT_LOG_MAX_FRAME_SERIAL_BUFFER_LENGTH) { //move data down to beginning of buffer.
+            stream->mapping.data[bytes_read - bytesParsedDataSize] = stream->mapping.data[bytes_read];
+            bytes_read++;
+        }
+        size_t topup = bytes_read - bytesParsedDataSize;
+        while (topup < FLIGHT_LOG_MAX_FRAME_SERIAL_BUFFER_LENGTH) { //fill the rest of the buffer
+            int byte = 0;
+            read(stream->mapping.fd, &byte, 1 );
+            stream->mapping.data[topup] = byte;
+            topup++;
+        }
+    }
+
+    stream->pos = stream->mapping.data;
+
+}
 
 uint32_t streamReadUnsignedVB(mmapStream_t *stream)
 {
@@ -182,14 +218,13 @@ mmapStream_t* streamCreate(int fd)
         return 0;
     }
 
-    result->data = result->mapping.data;
-    result->size = result->mapping.stats.st_size;
-
-    result->start = result->data;
-    result->pos = result->start;
+    result->data   = result->mapping.data;
+    result->size   = result->mapping.size;
+    result->start  = result->mapping.data;
+    result->pos    = result->mapping.data;
     result->bitPos = CHAR_BIT - 1;
-    result->end = result->start + result->size;
-    result->eof = false;
+    result->end    = result->mapping.data + result->mapping.size;
+    result->eof    = false;
 
     return result;
 }
