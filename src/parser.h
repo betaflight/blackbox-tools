@@ -9,7 +9,7 @@
 
 #include "blackbox_fielddefs.h"
 
-#define FLIGHT_LOG_MAX_LOGS_IN_FILE 31
+#define FLIGHT_LOG_MAX_LOGS_IN_FILE 1000
 #define FLIGHT_LOG_MAX_FIELDS 128
 
 #define FLIGHT_LOG_FIELD_INDEX_ITERATION 0
