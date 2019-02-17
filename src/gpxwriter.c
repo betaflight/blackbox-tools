@@ -27,7 +27,7 @@ void gpxWriterAddPreamble(gpxWriter_t *gpx)
  * Time is in microseconds since device power-on. Lat and lon are degrees multiplied by GPS_DEGREES_DIVIDER. Altitude
  * is in meters.
  */
-void gpxWriterAddPoint(gpxWriter_t *gpx, int64_t time, int32_t lat, int32_t lon, int16_t altitude)
+void gpxWriterAddPoint(gpxWriter_t *gpx, int64_t time, int32_t lat, int32_t lon, float altitude)
 {
     char negSign[] = "-";
     char noSign[] = "";
@@ -52,7 +52,7 @@ void gpxWriterAddPoint(gpxWriter_t *gpx, int64_t time, int32_t lat, int32_t lon,
     char *latSign = ((lat < 0) && (latDegrees == 0)) ? negSign : noSign;
     char *lonSign = ((lon < 0) && (lonDegrees == 0)) ? negSign : noSign;
 
-    fprintf(gpx->file, "  <trkpt lat=\"%s%d.%07u\" lon=\"%s%d.%07u\"><ele>%d</ele>", latSign, latDegrees, latFracDegrees, lonSign, lonDegrees, lonFracDegrees, altitude);
+    fprintf(gpx->file, "  <trkpt lat=\"%s%d.%07u\" lon=\"%s%d.%07u\"><ele>%f</ele>", latSign, latDegrees, latFracDegrees, lonSign, lonDegrees, lonFracDegrees, altitude);
 
     if (time != -1) {
         //We'll just assume that the timespan is less than 24 hours, and make up a date
