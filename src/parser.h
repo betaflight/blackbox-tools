@@ -144,6 +144,7 @@ typedef struct flightLogFrameDef_t {
 struct flightLogPrivate_t;
 
 typedef struct flightLog_t {
+	time_t dateTime; //GPS start date and time
     flightLogStatistics_t stats;
 
     //Information about fields which we need to decode them properly

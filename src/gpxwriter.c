@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "gpxwriter.h"
 
@@ -27,7 +28,7 @@ void gpxWriterAddPreamble(gpxWriter_t *gpx)
  * Time is in microseconds since device power-on. Lat and lon are degrees multiplied by GPS_DEGREES_DIVIDER. Altitude
  * is in meters.
  */
-void gpxWriterAddPoint(gpxWriter_t *gpx, int64_t time, int32_t lat, int32_t lon, int16_t altitude)
+void gpxWriterAddPoint(gpxWriter_t *gpx, time_t dateTime, int64_t time, int32_t lat, int32_t lon, float altitude)
 {
     char negSign[] = "-";
     char noSign[] = "";
@@ -52,22 +53,19 @@ void gpxWriterAddPoint(gpxWriter_t *gpx, int64_t time, int32_t lat, int32_t lon,
     char *latSign = ((lat < 0) && (latDegrees == 0)) ? negSign : noSign;
     char *lonSign = ((lon < 0) && (lonDegrees == 0)) ? negSign : noSign;
 
-    fprintf(gpx->file, "  <trkpt lat=\"%s%d.%07u\" lon=\"%s%d.%07u\"><ele>%d</ele>", latSign, latDegrees, latFracDegrees, lonSign, lonDegrees, lonFracDegrees, altitude);
+    fprintf(gpx->file, "  <trkpt lat=\"%s%d.%07u\" lon=\"%s%d.%07u\"><ele>%.2f</ele>", latSign, latDegrees, latFracDegrees, lonSign, lonDegrees, lonFracDegrees, altitude);
 
     if (time != -1) {
-        //We'll just assume that the timespan is less than 24 hours, and make up a date
-        uint32_t hours, mins, secs, frac;
+        //We'll just assume that the timespan is less than 24 hours
+        uint32_t secs, frac;
 
         frac = time % 1000000;
         secs = time / 1000000;
 
-        mins = secs / 60;
-        secs %= 60;
+    	time_t frameTime = dateTime+secs;
+    	struct tm *ftm = localtime (&frameTime);
 
-        hours = mins / 60;
-        mins %= 60;
-
-        fprintf(gpx->file, "<time>2000-01-01T%02u:%02u:%02u.%06uZ</time>", hours, mins, secs, frac);
+        fprintf(gpx->file, "<time>%04u-%02u-%02uT%02u:%02u:%02u.%06uZ</time>", ftm->tm_year + 1900, ftm->tm_mon + 1, ftm->tm_mday, ftm->tm_hour, ftm->tm_min, ftm->tm_sec, frac);
     }
     fprintf(gpx->file, "</trkpt>\n");
 }
