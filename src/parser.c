@@ -289,6 +289,20 @@ static void identifyFields(flightLog_t * log, uint8_t frameType, flightLogFrameD
     }
 }
 
+static time_t parseDateTime(char* fieldValue) {
+	int year, month, day;
+	struct tm parsedTime;
+	if(sscanf(fieldValue, "%d-%d-%dT%d:%d:%d", &year, &month, &day, &parsedTime.tm_hour, &parsedTime.tm_min, &parsedTime.tm_sec) != EOF){
+		// tm_year is years since 1900
+		parsedTime.tm_year = year - 1900;
+		// tm_months is months since january
+		parsedTime.tm_mon = month - 1;
+		parsedTime.tm_mday = day;
+		parsedTime.tm_isdst = 0; //Ignore daylight savings time for GPS time
+	}
+	return mktime(&parsedTime);;
+}
+
 static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream, ParserState *parserState) {
 
     if (streamReadByte(stream) != 'H') {
@@ -426,7 +440,10 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream, ParserStat
         parseCommaSeparatedIntegers(fieldValue, motorOutputs, 2);
         log->sysConfig.motorOutputLow = motorOutputs[0];
         log->sysConfig.motorOutputHigh = motorOutputs[1];
-     }
+     } else if (startsWith(fieldName,"Log start datetime"))  {
+    	log->dateTime = parseDateTime(fieldValue);
+ 	}
+
      return frameSize;
 }
 

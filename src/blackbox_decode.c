@@ -45,6 +45,7 @@ typedef struct decodeOptions_t {
 
     bool overrideSimCurrentMeterOffset, overrideSimCurrentMeterScale;
     int16_t simCurrentMeterOffset, simCurrentMeterScale;
+    float altOffset;
 
     Unit unitGPSSpeed, unitFrameTime, unitVbat, unitAmperage, unitHeight, unitAcceleration, unitRotation, unitFlags;
 } decodeOptions_t;
@@ -55,6 +56,7 @@ decodeOptions_t options = {
     .simulateIMU = false, .imuIgnoreMag = 0,
     .simulateCurrentMeter = false,
     .mergeGPS = 0,
+    .altOffset = 0,
 
     .overrideSimCurrentMeterOffset = false,
     .overrideSimCurrentMeterScale = false,
@@ -452,6 +454,13 @@ void outputGPSFields(flightLog_t *log, FILE *file, int64_t *frame)
     }
 }
 
+/**
+ * Get altitude in [m] from betaflight logged [cm], including optional user altitude offset.
+ */
+float getAltitude(flightLog_t *log, int64_t *frame) {
+	return frame[log->gpsFieldIndexes.GPS_altitude] / 100.0 + options.altOffset; //Change [cm] to [m] for gpx format
+}
+
 void outputGPSFrame(flightLog_t *log, int64_t *frame)
 {
     int64_t gpsFrameTime;
@@ -468,7 +477,7 @@ void outputGPSFrame(flightLog_t *log, int64_t *frame)
 	bool haveRequiredPrecision = log->gpsFieldIndexes.GPS_numSat == -1 || frame[log->gpsFieldIndexes.GPS_numSat] >= MIN_GPS_SATELLITES;
 
     if (haveRequiredFields && haveRequiredPrecision) {
-		gpxWriterAddPoint(gpx, gpsFrameTime, frame[log->gpsFieldIndexes.GPS_coord[0]], frame[log->gpsFieldIndexes.GPS_coord[1]], frame[log->gpsFieldIndexes.GPS_altitude]);
+		gpxWriterAddPoint(gpx, log->dateTime, gpsFrameTime, frame[log->gpsFieldIndexes.GPS_coord[0]], frame[log->gpsFieldIndexes.GPS_coord[1]], getAltitude(log, frame));
     }
 
     createGPSCSVFile(log);
@@ -643,7 +652,7 @@ void onFrameReadyMerge(flightLog_t *log, bool frameValid, int64_t *frame, uint8_
 				bool haveRequiredPrecision = log->gpsFieldIndexes.GPS_numSat == -1 || frame[log->gpsFieldIndexes.GPS_numSat] >= MIN_GPS_SATELLITES;
 
                 if (haveRequiredFields && haveRequiredPrecision) {
-                    gpxWriterAddPoint(gpx, gpsFrameTime, frame[log->gpsFieldIndexes.GPS_coord[0]], frame[log->gpsFieldIndexes.GPS_coord[1]], frame[log->gpsFieldIndexes.GPS_altitude]);
+                    gpxWriterAddPoint(gpx, log->dateTime, gpsFrameTime, frame[log->gpsFieldIndexes.GPS_coord[0]], frame[log->gpsFieldIndexes.GPS_coord[1]], getAltitude(log, frame));
                 }
             }
         break;
@@ -1195,6 +1204,7 @@ void printUsage(const char *argv0)
         "   --unit-acceleration <u>  Acceleration unit (raw|g|m/s2), default is raw\n"
         "   --unit-gps-speed <unit>  GPS speed unit (mps|kph|mph), default is mps (meters per second)\n"
         "   --unit-vbat <unit>       Vbat unit (raw|mV|V), default is V (volts)\n"
+	    "   --alt-offset             Altitude offset (meters), default is zero\n"
         "   --merge-gps              Merge GPS data into the main CSV log file instead of writing it separately\n"
         "   --simulate-current-meter Simulate a virtual current meter using throttle data\n"
         "   --sim-current-meter-scale   Override the FC's settings for the current meter simulation\n"
@@ -1238,6 +1248,7 @@ void parseCommandlineOptions(int argc, char **argv)
         SETTING_UNIT_ACCELERATION,
         SETTING_UNIT_FRAME_TIME,
         SETTING_UNIT_FLAGS,
+		SETTING_ALT_OFFSET,
     };
 
     while (1)
@@ -1266,6 +1277,7 @@ void parseCommandlineOptions(int argc, char **argv)
             {"unit-acceleration", required_argument, 0, SETTING_UNIT_ACCELERATION},
             {"unit-frame-time", required_argument, 0, SETTING_UNIT_FRAME_TIME},
             {"unit-flags", required_argument, 0, SETTING_UNIT_FLAGS},
+            {"alt-offset", required_argument, 0, SETTING_ALT_OFFSET},
             {0, 0, 0, 0}
         };
 
@@ -1346,6 +1358,9 @@ void parseCommandlineOptions(int argc, char **argv)
             case SETTING_CURRENT_METER_OFFSET:
                 options.overrideSimCurrentMeterOffset = true;
                 options.simCurrentMeterOffset = atoi(optarg);
+            break;
+            case SETTING_ALT_OFFSET:
+                options.altOffset = atof(optarg);
             break;
             case '\0':
                 //Longopt which has set a flag
