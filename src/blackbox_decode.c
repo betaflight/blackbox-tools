@@ -454,11 +454,26 @@ void outputGPSFields(flightLog_t *log, FILE *file, int64_t *frame)
     }
 }
 
+int getMajorVersion(flightLog_t *log)
+{
+    if (!log->private->fcVersion[0]) {
+        return -1; //Unknown version
+    }
+    char fcVersion[30];
+    strcpy(fcVersion, log->private->fcVersion);
+    return atoi(strtok(fcVersion, "."));
+}
+
 /**
- * Get altitude in [m] from betaflight logged [cm], including optional user altitude offset.
+ * Get altitude in [m] including optional user altitude offset.
+ * Note: Betaflight before version 4 logged altitude in [cm], since Betaflight 4 it use [dm].
  */
-float getAltitude(flightLog_t *log, int64_t *frame) {
-	return frame[log->gpsFieldIndexes.GPS_altitude] / 100.0 + options.altOffset; //Change [cm] to [m] for gpx format
+float getAltitude(flightLog_t *log, int64_t *frame)
+{
+    int majorFcVersion = getMajorVersion(log);
+    float unitFactor = majorFcVersion < 4 ? 0.01 : 0.1; //The logged altitude was changed from centimeter to decimeter since Betaflight 4.0.0.RC1
+    return frame[log->gpsFieldIndexes.GPS_altitude] * unitFactor
+            + options.altOffset; //Change [cm] to [m] for gpx format
 }
 
 void outputGPSFrame(flightLog_t *log, int64_t *frame)

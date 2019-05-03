@@ -392,6 +392,16 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream, ParserStat
             log->sysConfig.firmwareType = FIRMWARE_TYPE_CLEANFLIGHT;
         else
             log->sysConfig.firmwareType = FIRMWARE_TYPE_BASEFLIGHT;
+    } else if (strcmp(fieldName, "Firmware revision") == 0) {
+        char fieldCopy[200];
+        strcpy(fieldCopy, fieldValue);
+        char* fcName = strtok(fieldCopy, " "); //Read firmware name
+        if (!strcmp(fcName, "Betaflight")) { //Version text location known for Betaflight firmware
+            char* fcVersion = strtok(NULL, " "); //Firmware version text
+            strcpy(log->private->fcVersion, fcVersion);
+        } else {
+            log->private->fcVersion[0] = 0; //Indicate that firmware version unknown
+        }
     } else if (strcmp(fieldName, "minthrottle") == 0) {
         log->sysConfig.minthrottle = atoi(fieldValue);
 

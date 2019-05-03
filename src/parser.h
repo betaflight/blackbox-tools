@@ -177,6 +177,8 @@ typedef struct flightLogPrivate_t
 {
     int dataVersion;
 
+    char fcVersion[30];
+
     // Blackbox state:
     int64_t blackboxHistoryRing[3][FLIGHT_LOG_MAX_FIELDS];
 
