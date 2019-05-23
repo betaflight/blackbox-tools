@@ -82,6 +82,7 @@ Options:
    --width <px>           Choose the width of the image (default 1920)
    --height <px>          Choose the height of the image (default 1080)
    --fps                  FPS of the resulting video (default 30)
+   --threads              Number of threads to use to render frames (default 3)
    --prefix <filename>    Set the prefix of the output frame filenames
    --start <x:xx>         Begin the log at this time offset (default 0:00)
    --end <x:xx>           End the log at this time offset
@@ -89,14 +90,29 @@ Options:
    --[no-]draw-craft      Show craft drawing (default on)
    --[no-]draw-sticks     Show RC command sticks (default on)
    --[no-]draw-time       Show frame number and time in bottom right (default on)
+   --[no-]draw-acc        Show accelerometer data and amperage in bottom left (default on)
    --[no-]plot-motor      Draw motors on the upper graph (default on)
    --[no-]plot-pid        Draw PIDs on the lower graph (default off)
    --[no-]plot-gyro       Draw gyroscopes on the lower graph (default on)
+   --sticks-top <px>      Offset the stick overlay from the top (default off)
+   --sticks-right <px>    Offset the stick overlay from the right (default off)
+   --sticks-width <px>    Size of the stick area (default off)
+   --craft-top <px>       Offset the craft overlay from the top (default off)
+   --craft-right <px>     Offset the craft overlay from the right (default off)
+   --craft-width <px>     Size of the craft area (default off)
    --smoothing-pid <n>    Smoothing window for the PIDs (default 4)
    --smoothing-gyro <n>   Smoothing window for the gyroscopes (default 2)
    --smoothing-motor <n>  Smoothing window for the motors (default 2)
+   --unit-gyro <raw|degree>  Unit for the gyro values in the table (default raw)
    --prop-style <name>    Style of propeller display (pie/blades, default pie)
    --gapless              Fill in gaps in the log with straight lines
+   --raw-amperage         Print the current sensor ADC value along with computed amperage
+   --sticks-text-color    Set the RGBA text color (default 1.0,1.0,1.0,1.0)
+   --sticks-color         Set the RGBA sticks color (default 1.0,0.4,0.4,1.0)
+   --sticks-area-color    Set the RGBA sticks area color (default 0.3,0.3,0.3,0.8)
+   --sticks-radius <px>   Diameter of the sticks (default relative to image size)
+   --sticks-trail-radius <px>  Diameter of the sticks (default same ad stick radius)
+
 ```
 
 (At least on Windows) if you just want to render a log file using the defaults, you can drag and drop a log onto the
