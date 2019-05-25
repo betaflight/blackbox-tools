@@ -348,7 +348,7 @@ void drawCommandSticks(int64_t *frame, int imageWidth, int imageHeight, cairo_t 
 {
     double rcCommand[4] = {0, 0, 0, 0};
     int stickSurroundRadius = imageHeight / 11;
-    if(options.sticksWidth > 0) {
+    if (options.sticksWidth > 0) {
       stickSurroundRadius = options.sticksWidth;
     }
     const int stickSpacing = stickSurroundRadius * 3;
@@ -358,11 +358,11 @@ void drawCommandSticks(int64_t *frame, int imageWidth, int imageHeight, cairo_t 
     int stickRadius = stickSurroundRadius / 5;
     int stickTrailRadius = stickRadius;
 
-    if(options.stickRadius > 0) {
+    if (options.stickRadius > 0) {
       stickRadius = options.stickRadius;
     }
 
-    if(options.stickTrailRadius > 0) {
+    if (options.stickTrailRadius > 0) {
       stickTrailRadius = options.stickTrailRadius;
     }
 
@@ -416,14 +416,14 @@ void drawCommandSticks(int64_t *frame, int imageWidth, int imageHeight, cairo_t 
         cairo_stroke(cr);
 
         //Draw trail
-        for(int j = 0; j < stickTrailCurrent[i]; j++) {
+        for (int j = 0; j < stickTrailCurrent[i]; j++) {
           point_t current = stickTrails[i][j];
 
           cairo_set_source_rgba(cr, options.stickTrailColor.r, options.stickTrailColor.g, options.stickTrailColor.b, options.stickTrailColor.a - (options.stickTrailColor.a - (j / (stickTrailCurrent[i] + 1.0))));
           cairo_arc(cr, current.x, current.y, stickTrailRadius, 0, 2 * M_PI);
           cairo_fill(cr);
 
-          if(j > 0) {
+          if (j > 0) {
             stickTrails[i][j-1] = stickTrails[i][j];
           }
         }
@@ -432,11 +432,11 @@ void drawCommandSticks(int64_t *frame, int imageWidth, int imageHeight, cairo_t 
         double stickX = stickPositions[i * 2 + 0];
         double stickY = stickPositions[i * 2 + 1];
 
-        if(stickTrailCurrent[i] < options.stickTrailLength) {
+        if (stickTrailCurrent[i] < options.stickTrailLength) {
           stickTrailCurrent[i]++;
         }
 
-        if(stickTrailCurrent[i] > 0) {
+        if (stickTrailCurrent[i] > 0) {
           point_t p = {stickX, stickY};
           stickTrails[i][stickTrailCurrent[i] - 1] = p;
         }
@@ -652,7 +652,7 @@ void decideCraftParameters(craft_parameters_t *parameters, int imageWidth, int i
     parameters->numMotors = fieldMeta.numMotors == 3 || fieldMeta.numMotors == 4 ? fieldMeta.numMotors : 4;
     parameters->numBlades = 2;
     parameters->bladeLength = imageWidth / 25;
-    if(options.craftWidth > 0) {
+    if (options.craftWidth > 0) {
       parameters->bladeLength = options.craftWidth;
     }
     parameters->tipBezierWidth = 0.2 * parameters->bladeLength;
@@ -1331,11 +1331,11 @@ void renderAnimation(uint32_t startFrame, uint32_t endFrame)
                 cairo_save(cr);
                 {
 
-                    if(options.sticksTop != 0 && options.sticksRight != 0) {
+                    if (options.sticksTop != 0 && options.sticksRight != 0) {
                       cairo_translate(cr, options.imageWidth - options.sticksRight, options.sticksTop);
-                    } else if(options.sticksRight != 0) {
+                    } else if (options.sticksRight != 0) {
                       cairo_translate(cr, options.imageWidth - options.sticksRight, 0.20 * options.imageHeight);
-                    } else if(options.sticksTop != 0) {
+                    } else if (options.sticksTop != 0) {
                       cairo_translate(cr, 0.75 * options.imageWidth, options.sticksTop);
                     } else {
                       cairo_translate(cr, 0.75 * options.imageWidth, 0.20 * options.imageHeight);
@@ -1358,11 +1358,11 @@ void renderAnimation(uint32_t startFrame, uint32_t endFrame)
             if (options.drawCraft) {
                 cairo_save(cr);
                 {
-                    if(options.craftTop != 0 && options.craftRight != 0) {
+                    if (options.craftTop != 0 && options.craftRight != 0) {
                       cairo_translate(cr, options.imageWidth - options.craftRight, options.craftTop);
-                    } else if(options.craftRight != 0) {
+                    } else if (options.craftRight != 0) {
                       cairo_translate(cr, options.imageWidth - options.craftRight, 0.20 * options.imageHeight);
-                    } else if(options.craftTop != 0) {
+                    } else if (options.craftTop != 0) {
                       cairo_translate(cr, 0.75 * options.imageWidth, options.craftTop);
                     } else {
                       cairo_translate(cr, 0.75 * options.imageWidth, 0.20 * options.imageHeight);
@@ -1507,9 +1507,9 @@ bool parseTextColor(const char *text, colorAlpha_t *color) {
   const char *cur;
 
   color->r = atof(text);
-  for(cur = text; *cur; cur++) {
-    if(*cur == ',') {
-      switch(counter) {
+  for (cur = text; *cur; cur++) {
+    if (*cur == ',') {
+      switch (counter) {
         case 0: {
           color->g = atof(cur + 1);
         } break;
