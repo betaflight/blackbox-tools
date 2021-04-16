@@ -824,7 +824,7 @@ void applyFieldUnits(flightLog_t *log)
         memset(mainFieldUnit, 0, sizeof(mainFieldUnit));
         memset(gpsGFieldUnit, 0, sizeof(gpsGFieldUnit));
         memset(slowFieldUnit, 0, sizeof(slowFieldUnit));
-    
+
         if (log->mainFieldIndexes.vbatLatest > -1) {
             mainFieldUnit[log->mainFieldIndexes.vbatLatest] = options.unitVbat;
         }
@@ -884,7 +884,7 @@ void writeMainCSVHeader(flightLog_t *log)
     }
 
     if (options.simulateIMU) {
-        fprintf(csvFile, ", roll, pitch, heading");
+        fprintf(csvFile, ", roll(deg), pitch(deg), heading(deg)");
     }
 
     if (log->mainFieldIndexes.amperageLatest != -1) {
