@@ -39,6 +39,7 @@ typedef struct decodeOptions_t {
     int help, raw, limits, debug, toStdout;
     int logNumber;
     int simulateIMU, imuIgnoreMag;
+    int includeImuDegrees;
     int simulateCurrentMeter;
     int mergeGPS;
     const char *outputPrefix;
@@ -47,13 +48,14 @@ typedef struct decodeOptions_t {
     int16_t simCurrentMeterOffset, simCurrentMeterScale;
     float altOffset;
 
-    Unit unitGPSSpeed, unitFrameTime, unitVbat, unitAmperage, unitHeight, unitAcceleration, unitRotation, unitFlags;
+    Unit unitGPSSpeed, unitFrameTime, unitVbat, unitAmperage, unitHeight, unitAcceleration, unitRotation, unitFlags, unitDegrees;
 } decodeOptions_t;
 
 decodeOptions_t options = {
     .help = 0, .raw = 0, .limits = 0, .debug = 0, .toStdout = 0,
     .logNumber = -1,
     .simulateIMU = false, .imuIgnoreMag = 0,
+    .includeIMUDegrees = false
     .simulateCurrentMeter = false,
     .mergeGPS = 0,
     .altOffset = 0,
@@ -73,6 +75,7 @@ decodeOptions_t options = {
     .unitAcceleration = UNIT_RAW,
     .unitRotation = UNIT_RAW,
     .unitFlags = UNIT_FLAGS,
+    .unitDegrees = UNIT_DEGREES
 };
 
 //We'll use field names to identify GPS field units so the values can be formatted for display
@@ -884,7 +887,11 @@ void writeMainCSVHeader(flightLog_t *log)
     }
 
     if (options.simulateIMU) {
-        fprintf(csvFile, ", roll, pitch, heading");
+        if (options.includeIMUDegrees){
+            fprintf(csvFile, ", roll (%s), pitch (%s), heading (%s)", UNIT_NAME[options.unitDegrees], UNIT_NAME[options.unitDegrees], UNIT_NAME[options.unitDegrees]);
+        }else{
+            fprintf(csvFile, ", roll, pitch, heading");
+        }
     }
 
     if (log->mainFieldIndexes.amperageLatest != -1) {
@@ -1225,6 +1232,7 @@ void printUsage(const char *argv0)
         "   --sim-current-meter-scale   Override the FC's settings for the current meter simulation\n"
         "   --sim-current-meter-offset  Override the FC's settings for the current meter simulation\n"
         "   --simulate-imu           Compute tilt/roll/heading fields from gyro/accel/mag data\n"
+        "   --include-imu-degrees    Include (deg) in the header for tilt/roll/heading (Note. Requires --include-imu"
         "   --imu-ignore-mag         Ignore magnetometer data when computing heading\n"
         "   --declination <val>      Set magnetic declination in degrees.minutes format (e.g. -12.58 for New York)\n"
         "   --declination-dec <val>  Set magnetic declination in decimal degrees (e.g. -12.97 for New York)\n"
@@ -1276,6 +1284,7 @@ void parseCommandlineOptions(int argc, char **argv)
             {"stdout", no_argument, &options.toStdout, 1},
             {"merge-gps", no_argument, &options.mergeGPS, 1},
             {"simulate-imu", no_argument, &options.simulateIMU, 1},
+            {"include-imu-degrees", no_argument, &options.includeIMUDegrees, 1},
             {"simulate-current-meter", no_argument, &options.simulateCurrentMeter, 1},
             {"imu-ignore-mag", no_argument, &options.imuIgnoreMag, 1},
             {"sim-current-meter-scale", required_argument, 0, SETTING_CURRENT_METER_SCALE},
