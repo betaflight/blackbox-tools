@@ -889,7 +889,7 @@ void writeMainCSVHeader(flightLog_t *log)
     if (options.simulateIMU) {
         if (options.includeIMUDegrees){
             fprintf(csvFile, ", roll (%s), pitch (%s), heading (%s)", UNIT_NAME[options.unitDegrees], UNIT_NAME[options.unitDegrees], UNIT_NAME[options.unitDegrees]);
-        }else{
+        } else {
             fprintf(csvFile, ", roll, pitch, heading");
         }
     }
