@@ -91,6 +91,8 @@ bool unitFromName(const char *text, Unit *unit)
         *unit = UNIT_MICROSECONDS;
     } else if (striequals(text, "flags")) {
         *unit = UNIT_FLAGS;
+    } else if (striequals(text, "deg")){
+        *unit = UNIT_DEGREES;
     } else {
         return false;
     }

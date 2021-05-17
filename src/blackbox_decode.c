@@ -39,6 +39,7 @@ typedef struct decodeOptions_t {
     int help, raw, limits, debug, toStdout;
     int logNumber;
     int simulateIMU, imuIgnoreMag;
+    int includeIMUDegrees;
     int simulateCurrentMeter;
     int mergeGPS;
     const char *outputPrefix;
@@ -47,13 +48,14 @@ typedef struct decodeOptions_t {
     int16_t simCurrentMeterOffset, simCurrentMeterScale;
     float altOffset;
 
-    Unit unitGPSSpeed, unitFrameTime, unitVbat, unitAmperage, unitHeight, unitAcceleration, unitRotation, unitFlags;
+    Unit unitGPSSpeed, unitFrameTime, unitVbat, unitAmperage, unitHeight, unitAcceleration, unitRotation, unitFlags, unitDegrees;
 } decodeOptions_t;
 
 decodeOptions_t options = {
     .help = 0, .raw = 0, .limits = 0, .debug = 0, .toStdout = 0,
     .logNumber = -1,
     .simulateIMU = false, .imuIgnoreMag = 0,
+    .includeIMUDegrees = false,
     .simulateCurrentMeter = false,
     .mergeGPS = 0,
     .altOffset = 0,
@@ -73,6 +75,7 @@ decodeOptions_t options = {
     .unitAcceleration = UNIT_RAW,
     .unitRotation = UNIT_RAW,
     .unitFlags = UNIT_FLAGS,
+    .unitDegrees = UNIT_DEGREES
 };
 
 //We'll use field names to identify GPS field units so the values can be formatted for display
@@ -429,7 +432,7 @@ void outputGPSFields(flightLog_t *log, FILE *file, int64_t *frame)
                 degrees = frame[i] / 10000000;
                 fracDegrees = llabs(frame[i]) % 10000000;
 
-		        char *sign = ((frame[i] < 0) && (degrees == 0)) ? negSign : noSign;
+                char *sign = ((frame[i] < 0) && (degrees == 0)) ? negSign : noSign;
                 fprintf(file, "%s%d.%07u", sign, degrees, fracDegrees);
             break;
             case GPS_FIELD_TYPE_DEGREES_TIMES_10:
@@ -488,11 +491,11 @@ void outputGPSFrame(flightLog_t *log, int64_t *frame)
         gpsFrameTime = lastFrameTime;
     }
 
-	bool haveRequiredFields = log->gpsFieldIndexes.GPS_coord[0] != -1 && log->gpsFieldIndexes.GPS_coord[1] != -1 && log->gpsFieldIndexes.GPS_altitude != -1;
-	bool haveRequiredPrecision = log->gpsFieldIndexes.GPS_numSat == -1 || frame[log->gpsFieldIndexes.GPS_numSat] >= MIN_GPS_SATELLITES;
+    bool haveRequiredFields = log->gpsFieldIndexes.GPS_coord[0] != -1 && log->gpsFieldIndexes.GPS_coord[1] != -1 && log->gpsFieldIndexes.GPS_altitude != -1;
+    bool haveRequiredPrecision = log->gpsFieldIndexes.GPS_numSat == -1 || frame[log->gpsFieldIndexes.GPS_numSat] >= MIN_GPS_SATELLITES;
 
     if (haveRequiredFields && haveRequiredPrecision) {
-		gpxWriterAddPoint(gpx, log->dateTime, gpsFrameTime, frame[log->gpsFieldIndexes.GPS_coord[0]], frame[log->gpsFieldIndexes.GPS_coord[1]], getAltitude(log, frame));
+        gpxWriterAddPoint(gpx, log->dateTime, gpsFrameTime, frame[log->gpsFieldIndexes.GPS_coord[0]], frame[log->gpsFieldIndexes.GPS_coord[1]], getAltitude(log, frame));
     }
 
     createGPSCSVFile(log);
@@ -663,8 +666,8 @@ void onFrameReadyMerge(flightLog_t *log, bool frameValid, int64_t *frame, uint8_
                 outputMergeFrame(log);
 
                 // We need at least lat/lon/altitude from the log to write a useful GPX track
-				bool haveRequiredFields = log->gpsFieldIndexes.GPS_coord[0] != -1 && log->gpsFieldIndexes.GPS_coord[1] != -1 && log->gpsFieldIndexes.GPS_altitude != -1;
-				bool haveRequiredPrecision = log->gpsFieldIndexes.GPS_numSat == -1 || frame[log->gpsFieldIndexes.GPS_numSat] >= MIN_GPS_SATELLITES;
+                bool haveRequiredFields = log->gpsFieldIndexes.GPS_coord[0] != -1 && log->gpsFieldIndexes.GPS_coord[1] != -1 && log->gpsFieldIndexes.GPS_altitude != -1;
+                bool haveRequiredPrecision = log->gpsFieldIndexes.GPS_numSat == -1 || frame[log->gpsFieldIndexes.GPS_numSat] >= MIN_GPS_SATELLITES;
 
                 if (haveRequiredFields && haveRequiredPrecision) {
                     gpxWriterAddPoint(gpx, log->dateTime, gpsFrameTime, frame[log->gpsFieldIndexes.GPS_coord[0]], frame[log->gpsFieldIndexes.GPS_coord[1]], getAltitude(log, frame));
@@ -758,7 +761,7 @@ void onFrameReady(flightLog_t *log, bool frameValid, int64_t *frame, uint8_t fra
                     fprintf(csvFile, ", %c, offset %d, size %d\n", (char) frameType, frameOffset, frameSize);
                 } else {
                     fprintf(csvFile, "\n");
-				}
+                }
             } else if (options.debug) {
                 // Print to stdout so that these messages line up with our other output on stdout (stderr isn't synchronised to it)
                 if (frame) {
@@ -884,7 +887,11 @@ void writeMainCSVHeader(flightLog_t *log)
     }
 
     if (options.simulateIMU) {
-        fprintf(csvFile, ", roll, pitch, heading");
+        if (options.includeIMUDegrees){
+            fprintf(csvFile, ", roll (%s), pitch (%s), heading (%s)", UNIT_NAME[options.unitDegrees], UNIT_NAME[options.unitDegrees], UNIT_NAME[options.unitDegrees]);
+        } else {
+            fprintf(csvFile, ", roll, pitch, heading");
+        }
     }
 
     if (log->mainFieldIndexes.amperageLatest != -1) {
@@ -1219,12 +1226,13 @@ void printUsage(const char *argv0)
         "   --unit-acceleration <u>  Acceleration unit (raw|g|m/s2), default is raw\n"
         "   --unit-gps-speed <unit>  GPS speed unit (mps|kph|mph), default is mps (meters per second)\n"
         "   --unit-vbat <unit>       Vbat unit (raw|mV|V), default is V (volts)\n"
-	    "   --alt-offset             Altitude offset (meters), default is zero\n"
+        "   --alt-offset             Altitude offset (meters), default is zero\n"
         "   --merge-gps              Merge GPS data into the main CSV log file instead of writing it separately\n"
         "   --simulate-current-meter Simulate a virtual current meter using throttle data\n"
         "   --sim-current-meter-scale   Override the FC's settings for the current meter simulation\n"
         "   --sim-current-meter-offset  Override the FC's settings for the current meter simulation\n"
         "   --simulate-imu           Compute tilt/roll/heading fields from gyro/accel/mag data\n"
+        "   --include-imu-degrees    Include (deg) in the header for tilt/roll/heading (Note. Requires --include-imu"
         "   --imu-ignore-mag         Ignore magnetometer data when computing heading\n"
         "   --declination <val>      Set magnetic declination in degrees.minutes format (e.g. -12.58 for New York)\n"
         "   --declination-dec <val>  Set magnetic declination in decimal degrees (e.g. -12.97 for New York)\n"
@@ -1263,7 +1271,7 @@ void parseCommandlineOptions(int argc, char **argv)
         SETTING_UNIT_ACCELERATION,
         SETTING_UNIT_FRAME_TIME,
         SETTING_UNIT_FLAGS,
-		SETTING_ALT_OFFSET,
+        SETTING_ALT_OFFSET,
     };
 
     while (1)
@@ -1276,6 +1284,7 @@ void parseCommandlineOptions(int argc, char **argv)
             {"stdout", no_argument, &options.toStdout, 1},
             {"merge-gps", no_argument, &options.mergeGPS, 1},
             {"simulate-imu", no_argument, &options.simulateIMU, 1},
+            {"include-imu-degrees", no_argument, &options.includeIMUDegrees, 1},
             {"simulate-current-meter", no_argument, &options.simulateCurrentMeter, 1},
             {"imu-ignore-mag", no_argument, &options.imuIgnoreMag, 1},
             {"sim-current-meter-scale", required_argument, 0, SETTING_CURRENT_METER_SCALE},
