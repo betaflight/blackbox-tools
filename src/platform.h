@@ -41,6 +41,10 @@
     #include <sys/stat.h>
 #endif
 
+#if defined(__MINGW64__) || defined(__MINGW32__)
+    #include <sys/stat.h>
+#endif
+
 #ifdef WIN32
     #define snprintf _snprintf
 #endif
