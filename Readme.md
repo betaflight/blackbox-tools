@@ -1,5 +1,8 @@
 # Blackbox flight data recorder tools
 
+[![Build](https://img.shields.io/github/actions/workflow/status/betaflight/blackbox-tools/nightly.yml?branch=master)](https://github.com/betaflight/blackbox-tools/actions/workflows/nightly.yml) [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
+
 ![Rendered flight log frame](screenshots/blackbox-screenshot-1.jpg)
 
 ## Introduction

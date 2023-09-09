@@ -1,0 +1,30 @@
+name: CI
+
+on: 
+  workflow_call:
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on:  ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-22.04
+
+          - name: macOS
+            os: macos-11
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build the tools
+        run: make all
+
+      - name: Publish build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: Blackbox tools artifacts ${{matrix.name}}
+          path: obj/*
+          retention-days: 60
