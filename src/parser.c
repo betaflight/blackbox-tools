@@ -18,6 +18,9 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <assert.h>
+#if defined(__MINGW64__) || defined(__MINGW32__)
+    #include <time.h>
+#endif
 
 #include "parser.h"
 #include "tools.h"
