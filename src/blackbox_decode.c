@@ -39,6 +39,7 @@ typedef struct decodeOptions_t {
     int help, raw, limits, debug, toStdout;
     int logNumber;
     int simulateIMU, imuIgnoreMag;
+    int saveHeaders;
     int includeIMUDegrees;
     int simulateCurrentMeter;
     int mergeGPS;
@@ -56,6 +57,7 @@ decodeOptions_t options = {
     .logNumber = -1,
     .simulateIMU = false, .imuIgnoreMag = 0,
     .includeIMUDegrees = false,
+    .saveHeaders = false,
     .simulateCurrentMeter = false,
     .mergeGPS = 0,
     .altOffset = 0,
@@ -92,7 +94,7 @@ static GPSFieldType gpsFieldTypes[FLIGHT_LOG_MAX_FIELDS];
 static int64_t lastFrameTime;
 static uint32_t lastFrameIteration;
 
-static FILE *csvFile = 0, *eventFile = 0, *gpsCsvFile = 0;
+static FILE *csvFile = 0, *eventFile = 0, *gpsCsvFile = 0, *headersFile = 0;
 static char *eventFilename = 0, *gpsCsvFilename = 0;
 static gpxWriter_t *gpx = 0;
 
@@ -1073,6 +1075,50 @@ void resetParseState() {
     seriesStats_init(&looptimeStats);
 }
 
+void writeLogHeaderLine(const char *lineStart, const char *lineEnd) {
+    if (lineEnd - lineStart < 3) {
+        return;
+    }
+
+    if (*lineStart != 'H') {
+        return;
+    }
+
+    if (*(lineStart + 1) != ' ') {
+        return;
+    }
+    const char *separatorPos = strchr(lineStart, ':');
+    if (separatorPos == NULL || separatorPos > lineEnd) {
+        return;
+    }
+
+    fprintf(headersFile, "%.*s,\"%.*s\"\n", (int) (separatorPos - lineStart - 2), lineStart+2, (int) (lineEnd - separatorPos -1), separatorPos + 1);
+}
+
+void writeLogHeaders(flightLog_t *log, int logIndex) {
+    const char *headers = log->logBegin[logIndex];
+
+    if (headers == NULL) {
+        fprintf(stderr, "Header log with index %i could not be found\n", logIndex);
+        return;
+    }
+
+    const char *headerPos = headers;
+    const char *headerEnd = headerPos + strlen(headers);
+
+    fprintf(headersFile, "fieldname, fieldvalue\n");
+
+    while (headerPos < headerEnd) {
+        char *next_line = strchr(headerPos + 1, '\n');
+        if (next_line != NULL && next_line < headerEnd) {
+            writeLogHeaderLine(headerPos, next_line);
+            headerPos = next_line + 1;
+        } else {
+            break;
+        }
+    }
+}
+
 int decodeFlightLog(flightLog_t *log, const char *filename, int logIndex)
 {
     // Organise output files/streams
@@ -1087,7 +1133,7 @@ int decodeFlightLog(flightLog_t *log, const char *filename, int logIndex)
     if (options.toStdout) {
         csvFile = stdout;
     } else {
-        char *csvFilename = 0, *gpxFilename = 0;
+        char *csvFilename = 0, *gpxFilename = 0, *headersFilename = 0;
         int filenameLen;
 
         const char *outputPrefix = 0;
@@ -1129,6 +1175,19 @@ int decodeFlightLog(flightLog_t *log, const char *filename, int logIndex)
         eventFilename = malloc(filenameLen * sizeof(char));
 
         snprintf(eventFilename, filenameLen, "%.*s.%02d.event", outputPrefixLen, outputPrefix, logIndex + 1);
+
+        if (options.saveHeaders) {
+            filenameLen = outputPrefixLen + strlen(".00.headers.csv") + 1;
+            headersFilename = malloc(filenameLen * sizeof(char));
+
+            snprintf(headersFilename, filenameLen, "%.*s.%02d.headers.csv", outputPrefixLen, outputPrefix, logIndex + 1);
+
+            headersFile = fopen(headersFilename, "wb");
+            if (!headersFile) {
+                fprintf(stderr, "Failed to headers create output file %s\n", headersFilename);
+            }
+            free(headersFilename);
+        }
 
         csvFile = fopen(csvFilename, "wb");
 
@@ -1175,6 +1234,10 @@ int decodeFlightLog(flightLog_t *log, const char *filename, int logIndex)
 
     gpxWriterDestroy(gpx);
 
+    if (options.saveHeaders && headersFile != NULL) {
+        writeLogHeaders(log, logIndex);
+        fclose(headersFile);
+    }
     return success ? 0 : -1;
 }
 
@@ -1231,6 +1294,7 @@ void printUsage(const char *argv0)
         "   --simulate-current-meter Simulate a virtual current meter using throttle data\n"
         "   --sim-current-meter-scale   Override the FC's settings for the current meter simulation\n"
         "   --sim-current-meter-offset  Override the FC's settings for the current meter simulation\n"
+        "   --save-headers           Save the log headers to a CSV file\n"
         "   --simulate-imu           Compute tilt/roll/heading fields from gyro/accel/mag data\n"
         "   --include-imu-degrees    Include (deg) in the header for tilt/roll/heading (Note. Requires --include-imu"
         "   --imu-ignore-mag         Ignore magnetometer data when computing heading\n"
@@ -1284,6 +1348,7 @@ void parseCommandlineOptions(int argc, char **argv)
             {"stdout", no_argument, &options.toStdout, 1},
             {"merge-gps", no_argument, &options.mergeGPS, 1},
             {"simulate-imu", no_argument, &options.simulateIMU, 1},
+            {"save-headers", no_argument, &options.saveHeaders, 1},
             {"include-imu-degrees", no_argument, &options.includeIMUDegrees, 1},
             {"simulate-current-meter", no_argument, &options.simulateCurrentMeter, 1},
             {"imu-ignore-mag", no_argument, &options.imuIgnoreMag, 1},
