@@ -1089,7 +1089,7 @@ void writeLogHeaderLine(const char *lineStart, const char *lineEnd) {
     }
     const char *separatorPos = strchr(lineStart, ':');
     if (separatorPos == NULL || separatorPos > lineEnd) {
-      return;
+        return;
     }
 
     fprintf(headersFile, "%.*s,\"%.*s\"\n", (int) (separatorPos - lineStart - 2), lineStart+2, (int) (lineEnd - separatorPos -1), separatorPos + 1);
@@ -1111,10 +1111,10 @@ void writeLogHeaders(flightLog_t *log, int logIndex) {
     while (headerPos < headerEnd) {
         char *next_line = strchr(headerPos + 1, '\n');
         if (next_line != NULL && next_line < headerEnd) {
-          writeLogHeaderLine(headerPos, next_line);
-          headerPos = next_line + 1;
+            writeLogHeaderLine(headerPos, next_line);
+            headerPos = next_line + 1;
         } else {
-          break;
+            break;
         }
     }
 }
