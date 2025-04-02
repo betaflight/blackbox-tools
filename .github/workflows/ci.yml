@@ -26,7 +26,7 @@ jobs:
           sudo apt-get install -y pkg-config libfreetype6-dev libcairo2-dev
 
       - name: Install dependencies (macOS)
-        if: matrix.os == 'macos-12'
+        if: matrix.os == 'macos-13'
         run: |
           brew install pkg-config freetype cairo
 
