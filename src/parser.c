@@ -347,9 +347,9 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream, ParserStat
 
     char *fieldName = valueBuffer;
     valueBuffer[separatorPos - lineStart] = '\0';
-    if (strstr(fieldName,"features")) { // This is the last field in the header.
-        *parserState = PARSER_STATE_TRANSITION;
-    }
+//    if (strstr(fieldName,"features")) { // This is the last field in the header.
+//        *parserState = PARSER_STATE_TRANSITION;
+//    }
     char *fieldValue = valueBuffer + (separatorPos - lineStart) + 1;
     valueBuffer[lineEnd - lineStart - 1] = '\0';
 
@@ -1350,16 +1350,27 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
 
     while (1) {
         char command = streamPeekChar(private->stream);
-        
-            if (command == 'H' && parserState == PARSER_STATE_HEADER) {
-                size_t frameSize = parseHeaderLine(log, private->stream, &parserState);
-                if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) { //Move on if in stream.
-                    fillSerialBuffer(private->stream, frameSize, &parserState);
+
+        switch (command) {
+            case 'H':
+                if (parserState == PARSER_STATE_HEADER) {
+                    size_t frameSize = parseHeaderLine(log, private->stream, &parserState);
+                    if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) {
+                        fillSerialBuffer(private->stream, frameSize, &parserState);
+                    }
                 }
-            } else if (command == EOF) {
+                break;
+
+            case EOF:
                 fprintf(stderr, "Data file contained no events\n");
                 break;
-            } 
+
+            default:
+                parserState = PARSER_STATE_DATA;
+                fprintf(stderr, "Unexpected command '%c'. Switching to data state.\n", command);
+                break;
+            }
+
             if (parserState == PARSER_STATE_TRANSITION) {
                 frameType = getFrameType(command);
 
