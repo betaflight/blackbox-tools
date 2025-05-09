@@ -463,7 +463,7 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream) {
     }
 
      return totalLineBytesConsumed;
-}
+} // End of parseHeaderLine
 
 /**
  * Should a frame with the given index exist in this log (based on the user's selection of sampling rates)?
@@ -1298,8 +1298,7 @@ static void resetSysConfigToDefaults(flightLogSysConfig_t *config)
 
 bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMetadataReady, FlightLogFrameReady onFrameReady, FlightLogEventReady onEvent, bool raw) {
     ParserState parserState = PARSER_STATE_HEADER;
-    const flightLogFrameType_t *frameType = 0; // In my diff, I called this frameTypeDefinition to avoid conflict
-                                               // but sticking to original name here for minimal change.
+    const flightLogFrameType_t *frameType = 0;
     bool metadata_setup_and_ready_called = false; // To ensure one-time setup and onMetadataReady call
 
     flightLogPrivate_t *private = log->private;
@@ -1522,7 +1521,7 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
     done:
     log->stats.totalBytes = private->stream->end - private->stream->start;
     return true;
-}
+} // End of flightLogParse
 
 void flightLogDestroy(flightLog_t *log)
 {
