@@ -293,75 +293,98 @@ static void identifyFields(flightLog_t * log, uint8_t frameType, flightLogFrameD
 }
 
 static time_t parseDateTime(char* fieldValue) {
-	int year, month, day;
-	struct tm parsedTime;
-	if(sscanf(fieldValue, "%d-%d-%dT%d:%d:%d", &year, &month, &day, &parsedTime.tm_hour, &parsedTime.tm_min, &parsedTime.tm_sec) != EOF){
-		// tm_year is years since 1900
-		parsedTime.tm_year = year - 1900;
-		// tm_months is months since january
-		parsedTime.tm_mon = month - 1;
-		parsedTime.tm_mday = day;
-		parsedTime.tm_isdst = 0; //Ignore daylight savings time for GPS time
-	}
-	return mktime(&parsedTime);;
+    int year, month, day;
+    struct tm parsedTime;
+    if(sscanf(fieldValue, "%d-%d-%dT%d:%d:%d", &year, &month, &day, &parsedTime.tm_hour, &parsedTime.tm_min, &parsedTime.tm_sec) != EOF){
+        // tm_year is years since 1900
+        parsedTime.tm_year = year - 1900;
+        // tm_months is months since january
+        parsedTime.tm_mon = month - 1;
+        parsedTime.tm_mday = day;
+        parsedTime.tm_isdst = 0; //Ignore daylight savings time for GPS time
+    }
+    return mktime(&parsedTime);;
 }
 
-static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream, ParserState *parserState) {
+// Parses a single header line. Does not change parserState.
+// Assumes stream->pos points to 'H' of a configuration header. Consumes the entire line.
+static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream) {
 
     if (streamReadByte(stream) != 'H') {
+        // This case should ideally not be hit if called after peeking 'H'
         return 0;
     }
-    
+
     if (streamReadByte(stream) != ' ') {
-        return 1;
+        // Malformed header line, missing space after 'H'
+        return 1; // Consumed 'H'
     }
 
-    const char *lineStart = stream->pos;
+    const char *lineStart = stream->pos; // Position after "H "
     char valueBuffer[FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH];
     const char *separatorPos = 0;
-    size_t i = 0;
+    size_t i = 0; // Characters read for the current line content (after "H ")
     for ( ; i < FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH; ++i) {
-        char c = streamReadChar(stream);
+        char c = streamReadChar(stream); // Consumes character
 
         if (c == ':' && !separatorPos) {
-            separatorPos = stream->pos - 1;
+            separatorPos = stream->pos - 1; // stream->pos is now after ':', so -1 points to ':'
         }
 
         if (c == '\n') {
-            i++;//size includes the newline.
+            // i is current char index, so i+1 is count of chars including this newline
+            i++;
             break;
         }
 
         if (c == EOF || c == '\0') {
-            // Line ended before we saw a newline or it has binary stuff in there that shouldn't be there
-            return i;
+            // Line ended prematurely or contains null byte
+            // i is count of chars read before EOF/null
+            break;
         }
         valueBuffer[i] = c;
     }
-    size_t frameSize = i+2; //We have read two bytes previously.
+    // Total bytes consumed for this line = 2 ("H ") + i (content including newline or up to EOF/error)
+    size_t totalLineBytesConsumed = 2 + i;
+
     if (!separatorPos) {
-        return frameSize;
+        // No colon found, malformed header or just a comment line starting with "H "
+        return totalLineBytesConsumed;
     }
 
-    const char *lineEnd = stream->pos;
+    // Value buffer contains characters from lineStart up to (but not including) stream->pos
+    // The length of content in valueBuffer is (stream->pos - lineStart) if newline was last char consumed
+    // or (stream->pos - lineStart -1) if EOF was hit after last char.
+    // 'i' already correctly counts characters including newline if present.
 
     char *fieldName = valueBuffer;
-    valueBuffer[separatorPos - lineStart] = '\0';
-    if (strstr(fieldName,"features")) { // This is the last field in the header.
-        *parserState = PARSER_STATE_TRANSITION;
+    // separatorPos points to ':', lineStart points to first char after "H "
+    // Length of fieldName is (separatorPos - lineStart)
+    valueBuffer[separatorPos - lineStart] = '\0'; // Null-terminate fieldName
+
+    char *fieldValue = valueBuffer + (separatorPos - lineStart) + 1; // Points to char after ':'
+    // fieldValue needs to be null-terminated before the newline.
+    // If newline was read, it's at valueBuffer[i-1].
+    if (i > 0 && valueBuffer[i-1] == '\n') {
+        valueBuffer[i-1] = '\0';
+    } else if (i < FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH) {
+        // Line ended without newline (e.g. EOF, or filled buffer)
+        valueBuffer[i] = '\0';
+    } else {
+        // Buffer full, ensure null termination if possible (should be rare)
+        valueBuffer[FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH -1] = '\0';
     }
-    char *fieldValue = valueBuffer + (separatorPos - lineStart) + 1;
-    valueBuffer[lineEnd - lineStart - 1] = '\0';
+
 
     if (startsWith(fieldName, "Field ")) {
-        uint8_t frameType = (uint8_t) fieldName[strlen("Field ")];
-        flightLogFrameDef_t *frameDef = &log->frameDefs[frameType];
+        uint8_t frameTypeMarker = (uint8_t) fieldName[strlen("Field ")];
+        flightLogFrameDef_t *frameDef = &log->frameDefs[frameTypeMarker];
 
         if (endsWith(fieldName, " name")) {
             parseFieldNames(fieldValue, frameDef);
-            identifyFields(log, frameType, frameDef);
+            identifyFields(log, frameTypeMarker, frameDef);
 
-            if (frameType == 'I') {
+            if (frameTypeMarker == 'I') {
                 // P frames are derived from I frames so copy common data over to the P frame:
                 memcpy(log->frameDefs['P'].fieldName, frameDef->fieldName, sizeof(frameDef->fieldName));
                 log->frameDefs['P'].fieldCount = frameDef->fieldCount;
@@ -369,7 +392,7 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream, ParserStat
         } else if (endsWith(fieldName, " signed")) {
             parseCommaSeparatedIntegers(fieldValue, frameDef->fieldSigned, FLIGHT_LOG_MAX_FIELDS);
 
-            if (frameType == 'I') {
+            if (frameTypeMarker == 'I') {
                 memcpy(log->frameDefs['P'].fieldSigned, frameDef->fieldSigned, sizeof(frameDef->fieldSigned));
             }
         } else if (endsWith(fieldName, " predictor")) {
@@ -397,24 +420,22 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream, ParserStat
             log->sysConfig.firmwareType = FIRMWARE_TYPE_BASEFLIGHT;
     } else if (strcmp(fieldName, "Firmware revision") == 0) {
         char fieldCopy[200];
-        strcpy(fieldCopy, fieldValue);
+        strncpy(fieldCopy, fieldValue, sizeof(fieldCopy) - 1);
+        fieldCopy[sizeof(fieldCopy) - 1] = '\0';
         char* fcName = strtok(fieldCopy, " "); //Read firmware name
-        if (!strcmp(fcName, "Betaflight")) { //Version text location known for Betaflight firmware
+        if (fcName && !strcmp(fcName, "Betaflight")) { //Version text location known for Betaflight firmware
             char* fcVersion = strtok(NULL, " "); //Firmware version text
-            strcpy(log->private->fcVersion, fcVersion);
+            if (fcVersion) strncpy(log->private->fcVersion, fcVersion, sizeof(log->private->fcVersion) - 1);
+            log->private->fcVersion[sizeof(log->private->fcVersion) - 1] = '\0';
         } else {
             log->private->fcVersion[0] = 0; //Indicate that firmware version unknown
         }
     } else if (strcmp(fieldName, "minthrottle") == 0) {
         log->sysConfig.minthrottle = atoi(fieldValue);
-
-        // Default the new field name to this older value
         log->sysConfig.motorOutputLow = log->sysConfig.minthrottle;
     } else if (strcmp(fieldName, "maxthrottle") == 0) {
         log->sysConfig.maxthrottle = atoi(fieldValue);
-
-		// Default the new field name to this older value
-		log->sysConfig.motorOutputHigh = log->sysConfig.maxthrottle;
+        log->sysConfig.motorOutputHigh = log->sysConfig.maxthrottle;
     } else if (strcmp(fieldName, "rcRate") == 0) {
         log->sysConfig.rcRate = atoi(fieldValue);
     } else if (strcmp(fieldName, "vbatscale") == 0) {
@@ -424,25 +445,17 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream, ParserStat
     } else if (strcmp(fieldName, "vbatcellvoltage") == 0) {
         int vbatcellvoltage[3];
         parseCommaSeparatedIntegers(fieldValue, vbatcellvoltage, 3);
-
         log->sysConfig.vbatmincellvoltage = vbatcellvoltage[0];
         log->sysConfig.vbatwarningcellvoltage = vbatcellvoltage[1];
         log->sysConfig.vbatmaxcellvoltage = vbatcellvoltage[2];
     } else if (strcmp(fieldName, "currentMeter") == 0) {
         int currentMeterParams[2];
-
         parseCommaSeparatedIntegers(fieldValue, currentMeterParams, 2);
-
         log->sysConfig.currentMeterOffset = currentMeterParams[0];
         log->sysConfig.currentMeterScale = currentMeterParams[1];
     } else if (strcmp(fieldName, "gyro.scale") == 0 || strcmp(fieldName, "gyro_scale") == 0) {
         floatConvert.u = strtoul(fieldValue, 0, 16);
         log->sysConfig.gyroScale = floatConvert.f;
-
-        /* Baseflight uses a gyroScale that'll give radians per microsecond as output, whereas Cleanflight produces degrees
-         * per second and leaves the conversion to radians per us to the IMU. Let's just convert Cleanflight's scale to
-         * match Baseflight so we can use Baseflight's IMU for both: */
-
         if (log->sysConfig.firmwareType != FIRMWARE_TYPE_BASEFLIGHT) {
             log->sysConfig.gyroScale = (float) (log->sysConfig.gyroScale * (M_PI / 180.0) * 0.000001);
         }
@@ -454,10 +467,10 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream, ParserStat
         log->sysConfig.motorOutputLow = motorOutputs[0];
         log->sysConfig.motorOutputHigh = motorOutputs[1];
      } else if (startsWith(fieldName,"Log start datetime"))  {
-    	log->dateTime = parseDateTime(fieldValue);
- 	}
+        log->dateTime = parseDateTime(fieldValue);
+    }
 
-     return frameSize;
+     return totalLineBytesConsumed;
 }
 
 /**
@@ -523,7 +536,7 @@ static int64_t applyPrediction(flightLog_t *log, int fieldIndex, int predictor, 
             value += private->gpsHomeHistory[1][log->gpsHomeFieldIndexes.GPS_home[0]];
         break;
         case FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD_1:
-            if (log->gpsHomeFieldIndexes.GPS_home[1] < 1) {
+            if (log->gpsHomeFieldIndexes.GPS_home[1] < 1) { // Should be gpsHomeFieldIndexes.GPS_home[1] >= 0
                 fprintf(stderr, "Attempted to base prediction on GPS home position without GPS home frame definition\n");
                 exit(-1);
             }
@@ -534,9 +547,9 @@ static int64_t applyPrediction(flightLog_t *log, int fieldIndex, int predictor, 
             if (private->mainHistory[1])
                 value += private->mainHistory[1][FLIGHT_LOG_FIELD_INDEX_TIME];
         break;
-		case FLIGHT_LOG_FIELD_PREDICTOR_MINMOTOR:
-			value += log->sysConfig.motorOutputLow;
-		break;
+        case FLIGHT_LOG_FIELD_PREDICTOR_MINMOTOR:
+            value += log->sysConfig.motorOutputLow;
+        break;
         default:
             fprintf(stderr, "Unsupported field predictor %d\n", predictor);
             exit(-1);
@@ -552,9 +565,9 @@ static int64_t applyPrediction(flightLog_t *log, int fieldIndex, int predictor, 
  * raw - Set to true to disable predictions (and so store raw values)
  * skippedFrames - Set to the number of field iterations that were skipped over by rate settings since the last frame.
  */
-static void parseFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameType, int64_t *frame, int64_t *previous, int64_t *previous2, int skippedFrames, bool raw)
+static void parseFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameTypeMarker, int64_t *frame, int64_t *previous, int64_t *previous2, int skippedFrames, bool raw)
 {
-    flightLogFrameDef_t *frameDef = &log->frameDefs[frameType];
+    flightLogFrameDef_t *frameDef = &log->frameDefs[frameTypeMarker];
 
     int *predictor = frameDef->predictor;
     int *encoding = frameDef->encoding;
@@ -579,68 +592,46 @@ static void parseFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameType
             switch (encoding[i]) {
                 case FLIGHT_LOG_FIELD_ENCODING_SIGNED_VB:
                     streamByteAlign(stream);
-
                     value = streamReadSignedVB(stream);
                 break;
                 case FLIGHT_LOG_FIELD_ENCODING_UNSIGNED_VB:
                     streamByteAlign(stream);
-
                     value = streamReadUnsignedVB(stream);
                 break;
                 case FLIGHT_LOG_FIELD_ENCODING_NEG_14BIT:
                     streamByteAlign(stream);
-
                     value = -signExtend14Bit(streamReadUnsignedVB(stream));
                 break;
                 case FLIGHT_LOG_FIELD_ENCODING_TAG8_4S16:
                     streamByteAlign(stream);
-
                     if (log->private->dataVersion < 2)
                         streamReadTag8_4S16_v1(stream, values);
                     else
                         streamReadTag8_4S16_v2(stream, values);
-
-                    //Apply the predictors for the fields:
                     for (j = 0; j < 4; j++, i++)
                         frame[i] = applyPrediction(log, i, raw ? FLIGHT_LOG_FIELD_PREDICTOR_0 : predictor[i], values[j], frame, previous, previous2);
-
                     continue;
                 break;
                 case FLIGHT_LOG_FIELD_ENCODING_TAG2_3S32:
                     streamByteAlign(stream);
-
                     streamReadTag2_3S32(stream, values);
-
-                    //Apply the predictors for the fields:
                     for (j = 0; j < 3; j++, i++)
                         frame[i] = applyPrediction(log, i, raw ? FLIGHT_LOG_FIELD_PREDICTOR_0 : predictor[i], values[j], frame, previous, previous2);
-
                     continue;
                 break;
                 case FLIGHT_LOG_FIELD_ENCODING_TAG8_8SVB:
                     streamByteAlign(stream);
-
-                    //How many fields are in this encoded group? Check the subsequent field encodings:
                     for (j = i + 1; j < i + 8 && j < frameDef->fieldCount; j++)
                         if (encoding[j] != FLIGHT_LOG_FIELD_ENCODING_TAG8_8SVB)
                             break;
-
                     groupCount = j - i;
-
                     streamReadTag8_8SVB(stream, values, groupCount);
-
                     for (j = 0; j < groupCount; j++, i++)
                         frame[i] = applyPrediction(log, i, raw ? FLIGHT_LOG_FIELD_PREDICTOR_0 : predictor[i], values[j], frame, previous, previous2);
-
                     continue;
                 break;
                 case FLIGHT_LOG_FIELD_ENCODING_ELIAS_DELTA_U32:
                     value = streamReadEliasDeltaU32(stream);
-
-                    /*
-                     * Reading this bitvalue may cause the stream's bit pointer to no longer lie on a byte boundary, so be sure to call
-                     * streamByteAlign() if you want to read a byte from the stream later.
-                     */
                 break;
                 case FLIGHT_LOG_FIELD_ENCODING_ELIAS_DELTA_S32:
                     value = streamReadEliasDeltaS32(stream);
@@ -652,7 +643,6 @@ static void parseFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameType
                     value = streamReadEliasGammaS32(stream);
                 break;
                 case FLIGHT_LOG_FIELD_ENCODING_NULL:
-                    //Nothing to read
                     value = 0;
                 break;
                 default:
@@ -662,56 +652,41 @@ static void parseFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameType
 
             value = applyPrediction(log, i, raw ? FLIGHT_LOG_FIELD_PREDICTOR_0 : predictor[i], value, frame, previous, previous2);
 
-            if (fieldWidth[i] != 8) {
-                // Assume 32-bit...
+            if (fieldWidth[i] != 8) { // Assuming this means "not byte-width", so likely 32-bit default
                 if (fieldSigned[i]) {
-                    value = (int32_t) value; // Sign extend the lower 32-bits
+                    value = (int32_t) value;
                 } else {
                     value = (uint32_t) value;
                 }
             }
-
             frame[i] = value;
-
             i++;
         }
     }
-
     streamByteAlign(stream);
 }
 
-/*
- * Based on the log sampling rate, work out how many frames would have been skipped after the last frame that was
- * parsed until we get to the next logged iteration.
- */
 static uint32_t countIntentionallySkippedFrames(flightLog_t *log)
 {
     flightLogPrivate_t *private = log->private;
     uint32_t count = 0, frameIndex;
 
     if (private->lastMainFrameIteration == (uint32_t) -1) {
-        // Haven't parsed a frame yet so there's no frames to skip
         return 0;
     } else {
         for (frameIndex = private->lastMainFrameIteration + 1; !shouldHaveFrame(log, frameIndex); frameIndex++) {
             count++;
         }
     }
-
     return count;
 }
 
-/*
- * Based on the log sampling rate, work out how many frames would have been skipped after the last frame that was
- * parsed until we get to the iteration with the given index.
- */
 static uint32_t countIntentionallySkippedFramesTo(flightLog_t *log, uint32_t targetIteration)
 {
     flightLogPrivate_t *private = log->private;
     uint32_t count = 0, frameIndex;
 
     if (private->lastMainFrameIteration == (uint32_t) -1) {
-        // Haven't parsed a frame yet so there's no frames to skip
         return 0;
     } else {
         for (frameIndex = private->lastMainFrameIteration + 1; frameIndex < targetIteration; frameIndex++) {
@@ -720,37 +695,20 @@ static uint32_t countIntentionallySkippedFramesTo(flightLog_t *log, uint32_t tar
             }
         }
     }
-
     return count;
 }
 
-/**
- * Attempt to parse the Intraframe at the current log position into the history buffer at mainHistory[0].
- */
 static void parseIntraframe(flightLog_t *log, mmapStream_t *stream, bool raw)
 {
     flightLogPrivate_t *private = log->private;
-
-    int64_t *current = private->mainHistory[0];
-    int64_t *previous = private->mainHistory[1];
-
-    parseFrame(log, stream, 'I', current, previous, NULL, 0, raw);
+    parseFrame(log, stream, 'I', private->mainHistory[0], private->mainHistory[1], NULL, 0, raw);
 }
 
-/**
- * Attempt to parse the interframe at the current log position into the history buffer at mainHistory[0].
- */
 static void parseInterframe(flightLog_t *log, mmapStream_t *stream, bool raw)
 {
     flightLogPrivate_t *private = log->private;
-
-    int64_t *current = log->private->mainHistory[0];
-    int64_t *previous = log->private->mainHistory[1];
-    int64_t *previous2 = log->private->mainHistory[2];
-
     private->lastSkippedFrames = countIntentionallySkippedFrames(log);
-
-    parseFrame(log, stream, 'P', current, previous, previous2, log->private->lastSkippedFrames, raw);
+    parseFrame(log, stream, 'P', private->mainHistory[0], private->mainHistory[1], private->mainHistory[2], private->lastSkippedFrames, raw);
 }
 
 static void parseGPSFrame(flightLog_t *log, mmapStream_t *stream, bool raw)
@@ -768,11 +726,6 @@ static void parseSlowFrame(flightLog_t *log, mmapStream_t *stream, bool raw)
     parseFrame(log, stream, 'S', log->private->lastSlow, NULL, NULL, 0, raw);
 }
 
-/**
- * Attempt to parse an event frame at the current location into the log->private->lastEvent struct.
- * Return false if the event couldn't be parsed (e.g. unknown event ID), or true if it might have been
- * parsed successfully.
- */
 static void parseEventFrame(flightLog_t *log, mmapStream_t *stream, bool raw)
 {
     static const char END_OF_LOG_MESSAGE[] = "End of log\0";
@@ -803,15 +756,9 @@ static void parseEventFrame(flightLog_t *log, mmapStream_t *stream, bool raw)
         break;
         case FLIGHT_LOG_EVENT_LOG_END:
             streamRead(stream, endMessage, END_OF_LOG_MESSAGE_LEN);
-
             if (strncmp(endMessage, END_OF_LOG_MESSAGE, END_OF_LOG_MESSAGE_LEN) == 0) {
-                //Adjust the end of stream so we stop reading, this log is done
                 stream->end = stream->pos;
             } else {
-                /*
-                 * This isn't the real end of log message, it's probably just some bytes that happened to look like
-                 * an event header.
-                 */
                 log->private->lastEvent.event = -1;
             }
         break;
@@ -826,12 +773,10 @@ static void updateMainFieldStatistics(flightLog_t *log, int64_t *fields)
     flightLogFrameDef_t *frameDef = &log->frameDefs['I'];
 
     if (!log->stats.haveFieldStats) {
-        //If this is the first frame, there are no minimums or maximums in the stats to compare with
         for (i = 0; i < frameDef->fieldCount; i++) {
             log->stats.field[i].max = fields[i];
             log->stats.field[i].min = fields[i];
         }
-
         log->stats.haveFieldStats = true;
     } else {
         for (i = 0; i < frameDef->fieldCount; i++) {
@@ -845,32 +790,25 @@ static void updateMainFieldStatistics(flightLog_t *log, int64_t *fields)
 
 unsigned int flightLogVbatADCToMillivolts(flightLog_t *log, uint16_t vbatADC)
 {
-    // ADC is 12 bit (i.e. max 0xFFF), voltage reference is 3.3V, vbatscale is premultiplied by 100
     return (vbatADC * ADCVREF * 10 * log->sysConfig.vbatscale) / 0xFFF;
 }
 
 int flightLogAmperageADCToMilliamps(flightLog_t *log, uint16_t amperageADC)
 {
     int32_t millivolts;
-
     millivolts = ((uint32_t)amperageADC * ADCVREF * 100) / 4095;
     millivolts -= log->sysConfig.currentMeterOffset;
-
     return ((int64_t) millivolts * 10000) / log->sysConfig.currentMeterScale;
 }
 
 int flightLogEstimateNumCells(flightLog_t *log)
 {
     int i;
-    int refVoltage;
-
-    refVoltage = flightLogVbatADCToMillivolts(log, log->sysConfig.vbatref) / 100;
-
+    int refVoltage = flightLogVbatADCToMillivolts(log, log->sysConfig.vbatref) / 100;
     for (i = 1; i < 8; i++) {
         if (refVoltage < i * log->sysConfig.vbatmaxcellvoltage)
             break;
     }
-
     return i;
 }
 
@@ -881,7 +819,6 @@ double flightlogAccelerationRawToGs(flightLog_t *log, int32_t accRaw)
 
 double flightlogGyroToRadiansPerSecond(flightLog_t *log, int32_t gyroRaw)
 {
-    // gyroScale is set to give radians per microsecond, so multiply by 1,000,000 out to get the per-second value
     return (double)log->sysConfig.gyroScale * 1000000 * gyroRaw;
 }
 
@@ -889,59 +826,53 @@ static void flightlogDecodeFlagsToString(uint32_t flags, int numFlags, const cha
 {
     bool printedFlag = false;
     const char NO_FLAGS_MESSAGE[] = "0";
-
-    // The buffer should at least be large enough for us to add the "no flags present" message in!
     if (destLen < strlen(NO_FLAGS_MESSAGE) + 1) {
         fprintf(stderr, "Flag buffer too short\n");
         exit(-1);
     }
 
+    unsigned originalDestLen = destLen; // Keep original length for final null termination safety
+    char *originalDest = dest;
+
     for (int i = 0; i < numFlags; i++) {
         if ((flags & (1 << i)) != 0) {
             const char *flagName = flagNames[i];
             unsigned flagNameLen = strlen(flagName);
-
-            if (destLen < (printedFlag ? 1 : 0) + flagNameLen + 1 /* Null-terminator */) {
-                // Not enough room in the dest string to fit this flag
-                fprintf(stderr, "Flag buffer too short\n");
-                exit(-1);
+            if (destLen < (printedFlag ? 1 : 0) + flagNameLen + 1) {
+                fprintf(stderr, "Flag buffer too short for flag: %s\n", flagName);
+                // Ensure null termination if we can't fit more
+                if (originalDestLen > 0) originalDest[originalDestLen -1] = '\0';
+                return; // Or exit, depending on desired error handling
             }
-
             if (printedFlag) {
-                *dest = '|';
-                dest++;
+                *dest++ = '|';
                 destLen--;
             } else {
                 printedFlag = true;
             }
-
             strcpy(dest, flagName);
-
             dest += flagNameLen;
             destLen -= flagNameLen;
         }
     }
-
     if (!printedFlag) {
         strcpy(dest, NO_FLAGS_MESSAGE);
+    } else {
+      *dest = '\0'; // Ensure null termination after last flag
     }
 }
 
 void flightlogDecodeEnumToString(uint32_t value, unsigned numEnums, const char * const *enumNames, char *dest, unsigned destLen)
 {
     assert(destLen > 1);
-
     if (value < numEnums) {
         const char *name = enumNames[value];
-
         if (strlen(name) < destLen) {
             strcpy(dest, name);
         } else {
-            dest[0] = '\0';
+            dest[0] = '\0'; // Not enough space
         }
     } else {
-        // Since we don't have a name for this value, print it as a raw integer instead
-
         snprintf(dest, destLen, "%u", value);
     }
 }
@@ -965,66 +896,37 @@ flightLog_t * flightLogCreate(int fd)
 {
     const char *logSearchStart;
     int logIndex;
-
-    flightLog_t *log;
-    flightLogPrivate_t *private;
-
-    log = (flightLog_t *) malloc(sizeof(*log));
-    private = (flightLogPrivate_t *) malloc(sizeof(*private));
+    flightLog_t *log = (flightLog_t *) malloc(sizeof(*log));
+    if (!log) return NULL;
+    flightLogPrivate_t *private = (flightLogPrivate_t *) malloc(sizeof(*private));
+    if (!private) { free(log); return NULL; }
 
     memset(log, 0, sizeof(*log));
     memset(private, 0, sizeof(*private));
+    log->private = private; // Assign early for cleanup paths
 
     private->stream = streamCreate(fd);
-
-    if (!private->stream) {
-        free(log);
-        free(private);
-
-        return 0;
-    }
+    if (!private->stream) { free(private); free(log); return 0; }
 
     if (private->stream->size == 0 && (private->stream->mapping.stats.st_mode & S_IFREG) ==  S_IFREG) {
         fprintf(stderr, "Error: This log is zero-bytes long!\n");
-
-        streamDestroy(private->stream);
-
-        free(log);
-        free(private);
-
-        return 0;
+        streamDestroy(private->stream); free(private); free(log); return 0;
     }
 
     if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFREG) {
-    //First check how many logs are in this one file (each time the FC is rearmed, a new log is appended)
-    logSearchStart = private->stream->data;
-
-    for (logIndex = 0; logIndex < FLIGHT_LOG_MAX_LOGS_IN_FILE && logSearchStart < private->stream->data + private->stream->size; logIndex++) {
-        log->logBegin[logIndex] = memmem(logSearchStart, (private->stream->data + private->stream->size) - logSearchStart, LOG_START_MARKER, strlen(LOG_START_MARKER));
-
-        if (!log->logBegin[logIndex])
-            break; //No more logs found in the file
-
-        //Search for the next log after this header ends
-        logSearchStart = log->logBegin[logIndex] + strlen(LOG_START_MARKER);
-    }
-
-    log->logCount = logIndex;
-
-    /*
-     * Stick the end of the file as the beginning of the "one past end" log, so we can easily compute each log size.
-     *
-     * We have room for this because the logBegin array has an extra element on the end for it.
-     */
-    log->logBegin[log->logCount] = private->stream->data + private->stream->size;
+        logSearchStart = private->stream->data;
+        for (logIndex = 0; logIndex < FLIGHT_LOG_MAX_LOGS_IN_FILE && logSearchStart < private->stream->data + private->stream->size; logIndex++) {
+            log->logBegin[logIndex] = memmem(logSearchStart, (private->stream->data + private->stream->size) - logSearchStart, LOG_START_MARKER, strlen(LOG_START_MARKER));
+            if (!log->logBegin[logIndex]) break;
+            logSearchStart = log->logBegin[logIndex] + strlen(LOG_START_MARKER);
+        }
+        log->logCount = logIndex;
+        log->logBegin[log->logCount] = private->stream->data + private->stream->size;
     } else {
-    log->logCount = 1; //one stream 1 log.
-    log->logBegin[0] = private->stream->data;
-    log->logBegin[1] = private->stream->end;
+        log->logCount = 1;
+        log->logBegin[0] = private->stream->data;
+        log->logBegin[1] = private->stream->end;
     }
-
-    log->private = private;
-
     return log;
 }
 
@@ -1033,19 +935,12 @@ static const flightLogFrameType_t* getFrameType(uint8_t c)
     for (int i = 0; i < (int) ARRAY_LENGTH(frameTypes); i++)
         if (frameTypes[i].marker == c)
             return &frameTypes[i];
-
     return 0;
 }
 
-/**
- * Check that the values in the currently-decoded main frame (mainHistory[0]) don't look corrupted.
- *
- */
 static bool flightLogValidateMainFrameValues(flightLog_t *log)
 {
     flightLogPrivate_t *private = log->private;
-
-    // Check that iteration count and time didn't move backwards, and didn't move forward too much.
     return
         (uint32_t) private->mainHistory[0][FLIGHT_LOG_FIELD_INDEX_ITERATION] >= private->lastMainFrameIteration
         && (uint32_t) private->mainHistory[0][FLIGHT_LOG_FIELD_INDEX_ITERATION] < private->lastMainFrameIteration + MAXIMUM_ITERATION_JUMP_BETWEEN_FRAMES
@@ -1060,26 +955,14 @@ static void flightLogInvalidateStream(flightLog_t *log)
     log->private->mainHistory[2] = 0;
 }
 
-/**
- * Detects rollovers in the 32-bit system microtime that we use for frame timestamps. When a rollover is detected, it
- * is accumulated to allow the recovery of 64-bit timestamps.
- *
- * Returns the recovered 64-bit timestamp for the frame.
- */
 static int64_t flightLogDetectAndApplyTimestampRollover(flightLog_t *log, int64_t timestamp)
 {
     if (log->private->lastMainFrameTime != -1) {
-        if (
-            // If we appeared to travel backwards in time (modulo 32 bits)...
-            (uint32_t) timestamp < (uint32_t) log->private->lastMainFrameTime
-            // But we actually just incremented a reasonable amount (modulo 32-bits)...
-            && (uint32_t) ((uint32_t) timestamp - (uint32_t) log->private->lastMainFrameTime) < MAXIMUM_TIME_JUMP_BETWEEN_FRAMES
-        ) {
-            // 32-bit time counter has wrapped, so add 2^32 to the timestamp
+        if ((uint32_t) timestamp < (uint32_t) log->private->lastMainFrameTime &&
+            (uint32_t) ((uint32_t) timestamp - (uint32_t) log->private->lastMainFrameTime) < MAXIMUM_TIME_JUMP_BETWEEN_FRAMES) {
             log->private->timeRolloverAccumulator += 0x100000000LL;
         }
     }
-
     return (uint32_t) timestamp + log->private->timeRolloverAccumulator;
 }
 
@@ -1090,20 +973,17 @@ static void flightLogApplyMainFrameTimeRollover(flightLog_t *log)
 
 static void flightLogApplyGPSFrameTimeRollover(flightLog_t *log)
 {
-	int timeFieldIndex = log->gpsFieldIndexes.time;
-
-	if (timeFieldIndex != -1) {
-		log->private->lastGPS[timeFieldIndex] = flightLogDetectAndApplyTimestampRollover(log, log->private->lastGPS[timeFieldIndex]);
-	}
+    int timeFieldIndex = log->gpsFieldIndexes.time;
+    if (timeFieldIndex != -1) {
+        log->private->lastGPS[timeFieldIndex] = flightLogDetectAndApplyTimestampRollover(log, log->private->lastGPS[timeFieldIndex]);
+    }
 }
 
-static bool completeIntraframe(flightLog_t *log, mmapStream_t *stream, uint8_t frameType, const char *frameStart, const char *frameEnd, bool raw)
+static bool completeIntraframe(flightLog_t *log, mmapStream_t *stream, uint8_t frameTypeMarker, const char *frameStart, const char *frameEnd, bool raw)
 {
     flightLogPrivate_t *private = log->private;
-
     flightLogApplyMainFrameTimeRollover(log);
 
-    // Only attempt to validate the frame values if we have something to check it against
     if (!raw && private->lastMainFrameIteration != (uint32_t) -1 && !flightLogValidateMainFrameValues(log)) {
         flightLogInvalidateStream(log);
     } else {
@@ -1112,204 +992,133 @@ static bool completeIntraframe(flightLog_t *log, mmapStream_t *stream, uint8_t f
 
     if (private->mainStreamIsValid) {
         log->stats.intentionallyAbsentIterations += countIntentionallySkippedFramesTo(log, (uint32_t) private->mainHistory[0][FLIGHT_LOG_FIELD_INDEX_ITERATION]);
-
         private->lastMainFrameIteration = (uint32_t) private->mainHistory[0][FLIGHT_LOG_FIELD_INDEX_ITERATION];
         private->lastMainFrameTime = private->mainHistory[0][FLIGHT_LOG_FIELD_INDEX_TIME];
-
-        updateMainFieldStatistics(log, log->private->mainHistory[0]);
+        updateMainFieldStatistics(log, private->mainHistory[0]);
     }
 
     if (private->onFrameReady) {
-        private->onFrameReady(log, private->mainStreamIsValid, private->mainHistory[0], frameType, log->frameDefs[(int) frameType].fieldCount, frameStart - stream->data, frameEnd - frameStart);
+        private->onFrameReady(log, private->mainStreamIsValid, private->mainHistory[0], frameTypeMarker, log->frameDefs[(int) frameTypeMarker].fieldCount, frameStart - stream->data, frameEnd - frameStart);
     }
 
     if (private->mainStreamIsValid) {
-        // Rotate history buffers
-
-        // Both the previous and previous-previous states become the I-frame, because we can't look further into the past than the I-frame
         private->mainHistory[1] = private->mainHistory[0];
         private->mainHistory[2] = private->mainHistory[0];
-
-        // And advance the current frame into an empty space ready to be filled
         private->mainHistory[0] += FLIGHT_LOG_MAX_FIELDS;
         if (private->mainHistory[0] >= &private->blackboxHistoryRing[3][0]) {
             private->mainHistory[0] = &private->blackboxHistoryRing[0][0];
         }
     }
-
     return private->mainStreamIsValid;
 }
 
-static bool completeInterframe(flightLog_t *log, mmapStream_t *stream, uint8_t frameType, const char *frameStart, const char *frameEnd, bool raw)
+static bool completeInterframe(flightLog_t *log, mmapStream_t *stream, uint8_t frameTypeMarker, const char *frameStart, const char *frameEnd, bool raw)
 {
     flightLogPrivate_t *private = log->private;
-
-    (void) frameType;
-    (void) raw;
-
+    (void) frameTypeMarker; (void) raw; // frameTypeMarker is 'P', raw is used in validate
     flightLogApplyMainFrameTimeRollover(log);
 
     if (private->mainStreamIsValid && !raw && !flightLogValidateMainFrameValues(log)) {
         flightLogInvalidateStream(log);
     }
-    
+
     if (private->mainStreamIsValid) {
         private->lastMainFrameIteration = (uint32_t) private->mainHistory[0][FLIGHT_LOG_FIELD_INDEX_ITERATION];
         private->lastMainFrameTime = private->mainHistory[0][FLIGHT_LOG_FIELD_INDEX_TIME];
-
         log->stats.intentionallyAbsentIterations += private->lastSkippedFrames;
-
         updateMainFieldStatistics(log, private->mainHistory[0]);
     }
 
-    //Receiving a P frame can't resynchronise the stream so it doesn't set mainStreamIsValid to true
-
     if (private->onFrameReady) {
-        private->onFrameReady(log, private->mainStreamIsValid, private->mainHistory[0], frameType, log->frameDefs['I'].fieldCount, frameStart - stream->data, frameEnd - frameStart);
+        private->onFrameReady(log, private->mainStreamIsValid, private->mainHistory[0], 'P', log->frameDefs['I'].fieldCount, frameStart - stream->data, frameEnd - frameStart);
     }
 
     if (private->mainStreamIsValid) {
-        // Rotate history buffers
         private->mainHistory[2] = private->mainHistory[1];
         private->mainHistory[1] = private->mainHistory[0];
-
-        // And advance the current frame into an empty space ready to be filled
         private->mainHistory[0] += FLIGHT_LOG_MAX_FIELDS;
         if (private->mainHistory[0] >= &private->blackboxHistoryRing[3][0])
             private->mainHistory[0] = &private->blackboxHistoryRing[0][0];
     }
-
     return private->mainStreamIsValid;
 }
 
-static bool completeEventFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameType, const char *frameStart, const char *frameEnd, bool raw)
+static bool completeEventFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameTypeMarker, const char *frameStart, const char *frameEnd, bool raw)
 {
     flightLogEvent_t *lastEvent = &log->private->lastEvent;
+    (void) stream; (void) frameTypeMarker; (void) frameStart; (void) frameEnd; (void) raw;
 
-    (void) stream;
-    (void) frameType;
-    (void) frameStart;
-    (void) frameEnd;
-    (void) raw;
-
-    //Don't bother reporting invalid event types since they're likely just garbage data that happened to look like an event
     if (lastEvent->event != (FlightLogEvent) -1) {
-        switch (lastEvent->event) {
-            case FLIGHT_LOG_EVENT_LOGGING_RESUME:
-                /*
-                 * Bring the "last time" and "last iteration" up to the new resume time so we accept the sudden jump into
-                 * the future.
-                 */
-                log->private->lastMainFrameIteration = lastEvent->data.loggingResume.logIteration;
-                log->private->lastMainFrameTime = lastEvent->data.loggingResume.currentTime;
-            break;
-            default:
-                ;
+        if (lastEvent->event == FLIGHT_LOG_EVENT_LOGGING_RESUME) {
+            log->private->lastMainFrameIteration = lastEvent->data.loggingResume.logIteration;
+            log->private->lastMainFrameTime = lastEvent->data.loggingResume.currentTime;
         }
-
         if (log->private->onEvent) {
             log->private->onEvent(log, lastEvent);
         }
-
         return true;
     }
-
     return false;
 }
 
-static bool completeGPSHomeFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameType, const char *frameStart, const char *frameEnd, bool raw)
+static bool completeGPSHomeFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameTypeMarker, const char *frameStart, const char *frameEnd, bool raw)
 {
-    (void) frameType;
-    (void) frameStart;
-    (void) frameEnd;
-    (void) raw;
-
-    //Copy the decoded frame into the "last state" entry of gpsHomeHistory to publish it:
+    (void) stream; (void) raw; // Other params used by onFrameReady
     memcpy(&log->private->gpsHomeHistory[1], &log->private->gpsHomeHistory[0], sizeof(*log->private->gpsHomeHistory));
     log->private->gpsHomeIsValid = true;
-
     if (log->private->onFrameReady) {
-        log->private->onFrameReady(log, true, log->private->gpsHomeHistory[1], frameType, log->frameDefs[frameType].fieldCount, frameStart - stream->data, frameEnd - frameStart);
+        log->private->onFrameReady(log, true, log->private->gpsHomeHistory[1], frameTypeMarker, log->frameDefs[frameTypeMarker].fieldCount, frameStart - stream->data, frameEnd - frameStart);
     }
-
     return true;
 }
 
-static bool completeGPSFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameType, const char *frameStart, const char *frameEnd, bool raw)
+static bool completeGPSFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameTypeMarker, const char *frameStart, const char *frameEnd, bool raw)
 {
-    (void) frameType;
-    (void) frameStart;
-    (void) frameEnd;
-    (void) raw;
-
-	flightLogApplyGPSFrameTimeRollover(log);
-
+    (void) stream; (void) raw; // Other params used by onFrameReady
+    flightLogApplyGPSFrameTimeRollover(log);
     if (log->private->onFrameReady) {
-        log->private->onFrameReady(log, log->private->gpsHomeIsValid, log->private->lastGPS, frameType, log->frameDefs[frameType].fieldCount, frameStart - stream->data, frameEnd - frameStart);
+        log->private->onFrameReady(log, log->private->gpsHomeIsValid, log->private->lastGPS, frameTypeMarker, log->frameDefs[frameTypeMarker].fieldCount, frameStart - stream->data, frameEnd - frameStart);
     }
-
     return true;
 }
 
-static bool completeSlowFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameType, const char *frameStart, const char *frameEnd, bool raw)
+static bool completeSlowFrame(flightLog_t *log, mmapStream_t *stream, uint8_t frameTypeMarker, const char *frameStart, const char *frameEnd, bool raw)
 {
-    (void) frameType;
-    (void) frameStart;
-    (void) frameEnd;
-    (void) raw;
-
+    (void) stream; (void) raw; // Other params used by onFrameReady
     if (log->private->onFrameReady) {
-        log->private->onFrameReady(log, true, log->private->lastSlow, frameType, log->frameDefs[frameType].fieldCount, frameStart - stream->data, frameEnd - frameStart);
+        log->private->onFrameReady(log, true, log->private->lastSlow, frameTypeMarker, log->frameDefs[frameTypeMarker].fieldCount, frameStart - stream->data, frameEnd - frameStart);
     }
-
     return true;
 }
 
 static void resetSysConfigToDefaults(flightLogSysConfig_t *config)
 {
-    config->minthrottle = 1150;
-    config->maxthrottle = 1850;
-    config->motorOutputLow = 1150;
-	config->motorOutputHigh = 1850;
-
-    config->vbatref = 4095;
-    config->vbatscale = 110;
-    config->vbatmincellvoltage = 33;
-    config->vbatmaxcellvoltage = 43;
+    config->minthrottle = 1150; config->maxthrottle = 1850;
+    config->motorOutputLow = 1150;  config->motorOutputHigh = 1850;
+    config->vbatref = 4095; config->vbatscale = 110;
+    config->vbatmincellvoltage = 33; config->vbatmaxcellvoltage = 43;
     config->vbatwarningcellvoltage = 35;
-
-    config->currentMeterOffset = 0;
-    config->currentMeterScale = 400;
-
-    config->rcRate = 90;
-    config->yawRate = 0;
-
-    // Default these to silly numbers, because if we don't know the hardware we can't even begin to guess:
-    config->acc_1G = 1;
-    config->gyroScale = 1;
-
+    config->currentMeterOffset = 0; config->currentMeterScale = 400;
+    config->rcRate = 90; config->yawRate = 0;
+    config->acc_1G = 1; config->gyroScale = 1;
     config->firmwareType = FIRMWARE_TYPE_UNKNOWN;
 }
 
 bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMetadataReady, FlightLogFrameReady onFrameReady, FlightLogEventReady onEvent, bool raw) {
     ParserState parserState = PARSER_STATE_HEADER;
-    const flightLogFrameType_t *frameType = 0;
+    const flightLogFrameType_t *frameTypeDefinition = 0; // Renamed from frameType to avoid conflict
+    bool metadata_setup_done = false; // To ensure one-time setup before PARSER_STATE_TRANSITION
 
     flightLogPrivate_t *private = log->private;
 
-    if (logIndex < 0 || logIndex >= log->logCount)
-        return false;
+    if (logIndex < 0 || logIndex >= log->logCount) return false;
 
-    //Reset any parsed information from previous parses
     memset(&log->stats, 0, sizeof(log->stats));
-
     for (int frameC = 0; frameC < 256; frameC++) {
         free(log->frameDefs[frameC].namesLine);
+        log->frameDefs[frameC].namesLine = NULL; // Avoid double free if parse called again
     }
-
     memset(log->frameDefs, 0, sizeof(log->frameDefs));
-
-    // Apply default field widths (for older logging code that might omit the field width header)
     for (int i = 0; i < 256; i++) {
         for (int j = 0; j < FLIGHT_LOG_MAX_FIELDS; j++) {
             log->frameDefs[i].fieldWidth[j] = 4;
@@ -1318,168 +1127,191 @@ bool flightLogParse(flightLog_t *log, int logIndex, FlightLogMetadataReady onMet
 
     private->gpsHomeIsValid = false;
     flightLogInvalidateStream(log);
-
     private->mainHistory[0] = private->blackboxHistoryRing[0];
-    private->mainHistory[1] = NULL;
-    private->mainHistory[2] = NULL;
-
+    private->mainHistory[1] = NULL; private->mainHistory[2] = NULL;
     resetSysConfigToDefaults(&log->sysConfig);
-
-    log->frameIntervalI = 32;
-    log->frameIntervalPNum = 1;
-    log->frameIntervalPDenom = 1;
-
+    log->frameIntervalI = 32; log->frameIntervalPNum = 1; log->frameIntervalPDenom = 1;
     private->lastEvent.event = -1;
-
     clearFieldIdents(log);
+    private->timeRolloverAccumulator = 0; private->lastSkippedFrames = 0;
+    private->lastMainFrameIteration = (uint32_t) -1; private->lastMainFrameTime = -1;
+    private->onMetadataReady = onMetadataReady; private->onFrameReady = onFrameReady; private->onEvent = onEvent;
 
-    private->timeRolloverAccumulator = 0;
-    private->lastSkippedFrames = 0;
-    private->lastMainFrameIteration = (uint32_t) -1;
-    private->lastMainFrameTime = -1;
-
-    private->onMetadataReady = onMetadataReady;
-    private->onFrameReady = onFrameReady;
-    private->onEvent = onEvent;
-
-    //Set parsing ranges up for the log the caller selected
     private->stream->start = log->logBegin[logIndex];
     private->stream->pos = private->stream->start;
     private->stream->end = log->logBegin[logIndex + 1];
     private->stream->eof = false;
 
     while (1) {
-        char command = streamPeekChar(private->stream);
-        
-            if (command == 'H' && parserState == PARSER_STATE_HEADER) {
-                size_t frameSize = parseHeaderLine(log, private->stream, &parserState);
-                if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) { //Move on if in stream.
-                    fillSerialBuffer(private->stream, frameSize, &parserState);
+        char command = streamPeekChar(private->stream); // Peek once at the start of the loop
+
+        if (parserState == PARSER_STATE_HEADER) {
+            if (command == 'H') {
+                bool is_config_header = false;
+                // Check if "H " is followed by "Key:Value" format
+                if (private->stream->pos + 1 < private->stream->end && *(private->stream->pos + 1) == ' ') {
+                    const char *peek_ptr = private->stream->pos + 2; // After "H "
+                    int peek_len = 0;
+                    // Max reasonable length for a field name before colon
+                    while (peek_ptr < private->stream->end && *peek_ptr != '\n' && peek_len < (FLIGHT_LOG_MAX_FRAME_HEADER_LENGTH - 3)) {
+                        if (*peek_ptr == ':') {
+                            is_config_header = true;
+                            break;
+                        }
+                        peek_ptr++;
+                        peek_len++;
+                    }
+                }
+
+                if (is_config_header) {
+                    size_t headerLineSize = parseHeaderLine(log, private->stream); // Consumes the header line
+                    if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) {
+                        fillSerialBuffer(private->stream, headerLineSize, &parserState);
+                    }
+                    continue; // Loop to process next line, could be another header
+                } else {
+                    // 'H' not in "H Key:Value" format, or malformed. Assume end of config headers.
+                    // This 'H' is now considered the start of a data frame.
+                    parserState = PARSER_STATE_TRANSITION; // Fall through to transition logic
                 }
             } else if (command == EOF) {
-                fprintf(stderr, "Data file contained no events\n");
-                break;
-            } 
-            if (parserState == PARSER_STATE_TRANSITION) {
-                frameType = getFrameType(command);
+                fprintf(stderr, "Data file ended during header processing or contained no data.\n");
+                goto done;
+            } else {
+                // Not 'H', not EOF. End of config headers.
+                parserState = PARSER_STATE_TRANSITION; // Fall through to transition logic
+            }
 
-                if (frameType) {
-
-                    if (log->frameDefs['I'].fieldCount == 0) {
-                        fprintf(stderr, "Data file is missing field name definitions\n");
-                        return false;
+            // If we are about to transition (either from non-config 'H' or non-'H' char)
+            // perform one-time metadata setup.
+            if (parserState == PARSER_STATE_TRANSITION && !metadata_setup_done) {
+                if (log->frameDefs['I'].fieldCount == 0) {
+                    fprintf(stderr, "Data file is missing I-frame field name definitions or has no valid headers.\n");
+                    return false;
+                }
+                for (int i = 1; i < log->frameDefs['G'].fieldCount; i++) {
+                    if (log->frameDefs['G'].predictor[i - 1] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD &&
+                        log->frameDefs['G'].predictor[i] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD) {
+                        log->frameDefs['G'].predictor[i] = FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD_1;
                     }
+                }
+                metadata_setup_done = true;
+            }
+        } // End of PARSER_STATE_HEADER
 
-                    /* Home coord predictors appear in pairs (lat/lon), but the predictor ID is the same for both. It's easier to
-                        * apply the right predictor during parsing if we rewrite the predictor ID for the second half of the pair here:
-                        */
-                    for (int i = 1; i < log->frameDefs['G'].fieldCount; i++) {
-                        if (log->frameDefs['G'].predictor[i - 1] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD &&
-                            log->frameDefs['G'].predictor[i] == FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD) {
-                            log->frameDefs['G'].predictor[i] = FLIGHT_LOG_FIELD_PREDICTOR_HOME_COORD_1;
-                        }
-                    }
+        if (parserState == PARSER_STATE_TRANSITION) {
+            // `command` is the first char of data section (e.g. 'I', 'P', or 'H' for H-data frame)
+            frameTypeDefinition = getFrameType(command);
 
-                    parserState = PARSER_STATE_DATA;
-                    frameType = NULL;
+            if (frameTypeDefinition) {
+                if (private->onMetadataReady) { // Call onMetadataReady once, now that headers are done
+                    private->onMetadataReady(log); // and we have a valid first data frame type
+                }
+                parserState = PARSER_STATE_DATA;
+                // Fall through to PARSER_STATE_DATA with current `command` and `frameTypeDefinition`
+            } else if (command == EOF) {
+                fprintf(stderr, "EOF encountered after headers, before any valid data frame type.\n");
+                goto done;
+            } else {
+                fprintf(stderr, "Skipping unexpected character '%c' (0x%02X) after headers.\n", isprint(command) ? command : '?', command);
+                streamReadByte(private->stream); // Consume the garbage character
+                if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) {
+                    fillSerialBuffer(private->stream, 1, &parserState); // Pass current parserState
+                }
+                continue;
+            }
+        } // End of PARSER_STATE_TRANSITION
 
-                    if (onMetadataReady) {
-                        onMetadataReady(log);
-                    }
-                } // else skip garbage which apparently precedes the first data frame
-            } else if (parserState == PARSER_STATE_DATA) {
-            if (command == EOF) {
+        if (parserState == PARSER_STATE_DATA) {
+            if (command == EOF) { // Should have been caught by TRANSITION if it was the first data char
                 goto done;
             }
 
-            frameType = getFrameType((uint8_t) command);
-            streamReadByte(private->stream);//Skip over initial frame letter
-            size_t frameSize = 0;
+            // `command` is the frame type marker, `frameTypeDefinition` is set if first data frame.
+            // For subsequent frames, `frameTypeDefinition` needs to be re-evaluated from `command`.
+            frameTypeDefinition = getFrameType((uint8_t) command);
 
-            if (frameType) {
-                const char *frameStart = private->stream->pos;
-                frameType->parse(log, private->stream, raw);
-                frameSize = private->stream->pos - frameStart;
-            } else {
+            if (!frameTypeDefinition) { // Should not happen if transition logic worked, but handles corruption
+                fprintf(stderr, "Unexpected character '%c' (0x%02X) in data stream (expected frame type marker).\n", isprint(command) ? command : '?', command);
+                streamReadByte(private->stream); // Consume it
+                log->stats.totalCorruptFrames++;
                 private->mainStreamIsValid = false;
+                 if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) {
+                    fillSerialBuffer(private->stream, 1, &parserState);
+                }
+                continue;
             }
 
-            //We shouldn't read an EOF during reading a frame (that'd imply the frame was truncated)
-            bool prematureEof = false;
-            if (private->stream->eof) {
-                prematureEof = true;
-            }
+            streamReadByte(private->stream); // Consume the frame type marker (`command`)
 
-            if (frameType) {
-                // Is this the beginning of a new frame?
-                frameType = command == EOF ? 0 : getFrameType((uint8_t) command);
-                bool looksLikeFrameCompleted = frameType || (!prematureEof && command == EOF);
+            const char *framePayloadStart = private->stream->pos;
+            frameTypeDefinition->parse(log, private->stream, raw); // Parses payload
+            size_t parsedPayloadSize = private->stream->pos - framePayloadStart;
 
-                // If we see what looks like the beginning of a new frame, assume that the previous frame was valid:
-                if (frameSize <= FLIGHT_LOG_MAX_FRAME_LENGTH && looksLikeFrameCompleted) {
-                    bool frameAccepted = true;
+            bool prematureEofInPayload = private->stream->eof; // Check EOF *after* parse
 
-                    if (frameType->complete) {
-                        frameAccepted = frameType->complete(log, log->private->stream, frameType->marker, private->stream->pos - frameSize, private->stream->pos, raw);
+            // Total frame length is marker (1) + payload (parsedPayloadSize)
+            size_t totalFrameLength = 1 + parsedPayloadSize;
+            // Frame start for 'complete' callback is before marker
+            const char *actualFrameStartForCallback = private->stream->pos - totalFrameLength;
+
+
+            if (!prematureEofInPayload && totalFrameLength <= FLIGHT_LOG_MAX_FRAME_LENGTH) {
+                bool frameAccepted = true;
+                if (frameTypeDefinition->complete) {
+                    frameAccepted = frameTypeDefinition->complete(log, private->stream, frameTypeDefinition->marker, actualFrameStartForCallback, private->stream->pos, raw);
+                }
+
+                if (frameAccepted) {
+                    log->stats.frame[frameTypeDefinition->marker].bytes += totalFrameLength;
+                    if (totalFrameLength < FLIGHT_LOG_MAX_FRAME_LENGTH) { // Check bounds for sizeCount array
+                        log->stats.frame[frameTypeDefinition->marker].sizeCount[totalFrameLength]++;
                     }
-
-                    if (frameAccepted) {
-                        //Update statistics for this frame type
-                        log->stats.frame[frameType->marker].bytes += frameSize;
-                        log->stats.frame[frameType->marker].sizeCount[frameSize]++;
-                        log->stats.frame[frameType->marker].validCount++;
-                        if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) { //fill data buffer with data
-                            fillSerialBuffer(private->stream, frameSize+1, &parserState); //+1 as size includes the header letter.
-                        }
-                    } else {
-                        log->stats.frame[frameType->marker].desyncCount++;
+                    log->stats.frame[frameTypeDefinition->marker].validCount++;
+                    if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) {
+                        fillSerialBuffer(private->stream, totalFrameLength, &parserState);
                     }
                 } else {
-                    //The previous frame was corrupt
-
-                    //We need to resynchronise before we can deliver another main frame:
-                    private->mainStreamIsValid = false;
-                    log->stats.frame[frameType->marker].corruptCount++;
-                    log->stats.totalCorruptFrames++;
-
-                    //Let the caller know there was a corrupt frame (don't give them a pointer to the frame data because it is totally worthless)
-                    if (onFrameReady) {
-                        onFrameReady(log, false, 0, frameType->marker, 0, (private->stream->pos - frameSize) - private->stream->data, frameSize);
-                    }
-
-                    /*
-                    * Start the search for a frame beginning after the first byte of the previous corrupt frame.
-                    * This way we can find the start of the next frame after the corrupt frame if the corrupt frame
-                    * was truncated.
-                    */
-                    streamReadByte(private->stream);//Move on from corrupt frame.
-                    if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) { //fill data buffer with data
-                        fillSerialBuffer(private->stream, 1, &parserState);
-                    }
-                    frameType = NULL;
-                    prematureEof = false;
-                    private->stream->eof = false;
-                    continue;
+                    log->stats.frame[frameTypeDefinition->marker].desyncCount++;
+                    // If desync, mainStream might be invalidated by complete function
                 }
+            } else { // Frame corrupt (too long or EOF in payload)
+                private->mainStreamIsValid = false;
+                log->stats.frame[frameTypeDefinition->marker].corruptCount++;
+                log->stats.totalCorruptFrames++;
+                if (private->onFrameReady) {
+                    private->onFrameReady(log, false, 0, frameTypeDefinition->marker, 0, actualFrameStartForCallback - private->stream->data, totalFrameLength);
+                }
+                // Stream position is already after the attempted parse. Loop will re-peek.
+                // Reset EOF if it was set by a failed parse within a frame, to allow further peeking.
+                if (prematureEofInPayload) private->stream->eof = false;
+                // For serial streams, if frame was corrupt, we consumed totalFrameLength.
+                // The original code had fillSerialBuffer(1) in corrupt path after streamReadByte.
+                // Here, we consumed marker + attempted payload.
+                 if ((private->stream->mapping.stats.st_mode & S_IFMT) == S_IFCHR) {
+                    fillSerialBuffer(private->stream, totalFrameLength, &parserState);
+                }
+                continue;
             }
-        }
-
-    }
+        } // End of PARSER_STATE_DATA
+    } // End of main while(1) loop
 
     done:
     log->stats.totalBytes = private->stream->end - private->stream->start;
-
     return true;
 }
 
 void flightLogDestroy(flightLog_t *log)
 {
-    streamDestroy(log->private->stream);
-
-    for (int i = 0; i < 256; i++) {
-        free(log->frameDefs[i].namesLine);
+    if (!log) return;
+    if (log->private) {
+        if (log->private->stream) {
+            streamDestroy(log->private->stream);
+        }
+        for (int i = 0; i < 256; i++) {
+            free(log->frameDefs[i].namesLine); // Safe if NULL
+        }
+        free(log->private);
     }
-
-    free(log->private);
     free(log);
 }
