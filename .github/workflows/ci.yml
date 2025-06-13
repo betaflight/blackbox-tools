@@ -45,6 +45,8 @@ jobs:
             mingw-w64-x86_64-freetype
             mingw-w64-x86_64-cairo
             make
+            perl
+            perl-Pod-Usage
 
       - name: Build the tools
         shell: bash
