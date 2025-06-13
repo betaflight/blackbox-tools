@@ -48,7 +48,7 @@ jobs:
       - name: Build the tools
         shell: bash
         working-directory: git
-        run: make all
+        run: make
 
       - name: Publish build artifacts
         uses: actions/upload-artifact@v4
