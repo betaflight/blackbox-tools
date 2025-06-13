@@ -50,13 +50,6 @@ jobs:
             perl
             perl-Pod-Usage
 
-      - name: Install more dependencies (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc
-
       - name: Build the tools
         shell: bash
         working-directory: .
