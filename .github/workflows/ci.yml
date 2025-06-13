@@ -40,13 +40,21 @@ jobs:
         with:
           msystem: MINGW64
           install: >-
+            base-devel
+            mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-freetype
             mingw-w64-x86_64-cairo
             make
-            perl
-            perl-Pod-Usage
+
+      - name: Install more dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          perl -MCPAN -e "install 'Pod::Usage'"
+          sudo apt-get update
+          sudo apt-get install -y gcc
 
       - name: Build the tools
         shell: bash
