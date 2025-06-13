@@ -18,6 +18,7 @@ jobs:
 
           - name: Windows
             os: windows-latest
+      fail-fast: false
 
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +48,7 @@ jobs:
 
       - name: Build the tools
         shell: bash
-        working-directory: git
+        working-directory: .
         run: make
 
       - name: Publish build artifacts
@@ -62,4 +63,3 @@ jobs:
             obj/blackbox_decode.exe
             obj/blackbox_render.exe
             obj/encoder_testbed.exe
-
