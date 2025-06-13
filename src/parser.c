@@ -347,7 +347,15 @@ static size_t parseHeaderLine(flightLog_t *log, mmapStream_t *stream, ParserStat
 
     char *fieldName = valueBuffer;
     valueBuffer[separatorPos - lineStart] = '\0';
-    if (strstr(fieldName,"features")) { // This is the last field in the header.
+    /*
+     * Generic end-of-header detection:
+     * After reading the newline, the stream cursor now points to the next
+     * record’s first byte.  If that byte is not another 'H' (or is EOF),
+     * the ASCII header block is finished, so request a state transition.
+     * Replaces heuristic introduced in commit 41ee5e7c8.
+     */
+    int nextChar = streamPeekChar(stream);
+    if (nextChar != 'H') {      /* also true for EOF */
         *parserState = PARSER_STATE_TRANSITION;
     }
     char *fieldValue = valueBuffer + (separatorPos - lineStart) + 1;
