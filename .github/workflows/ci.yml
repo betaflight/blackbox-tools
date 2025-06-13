@@ -54,7 +54,6 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          perl -MCPAN -e "install 'Pod::Usage'"
           sudo apt-get update
           sudo apt-get install -y gcc
 
