@@ -38,8 +38,8 @@ bool startsWith(const char *string, const char *checkStartsWith)
 
 bool endsWith(const char *string, const char *checkEndsWith)
 {
-    int stringLen = strlen(string);
-    int endsWithLen = strlen(checkEndsWith);
+    int stringLen = (int)strlen(string);
+    int endsWithLen = (int)strlen(checkEndsWith);
 
     return stringLen >= endsWithLen && strncmp(string + stringLen - endsWithLen, checkEndsWith, endsWithLen) == 0;
 }

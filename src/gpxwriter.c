@@ -59,8 +59,8 @@ void gpxWriterAddPoint(gpxWriter_t *gpx, time_t dateTime, int64_t time, int32_t 
         //We'll just assume that the timespan is less than 24 hours
         uint32_t secs, frac;
 
-        frac = time % 1000000;
-        secs = time / 1000000;
+        frac = (uint32_t)(time % 1000000);
+        secs = (uint32_t)(time / 1000000);
 
     	time_t frameTime = dateTime+secs;
     	struct tm *ftm = localtime (&frameTime);
