@@ -44,7 +44,7 @@ jobs:
       - name: Build the tools
         if: matrix.os != 'windows-latest'
         shell: bash
-        working-directory: git
+        working-directory: .
         run: make
 
       - name: Build the tools (Windows)
@@ -76,7 +76,7 @@ jobs:
             Get-ChildItem -Path "obj" -Filter "*.dll" | ForEach-Object { Write-Host $_.Name }
           }
         shell: pwsh
-        working-directory: git
+        working-directory: .
 
       - name: Publish build artifacts
         uses: actions/upload-artifact@v4
