@@ -12,6 +12,17 @@
 
 #ifdef WIN32
     #include <io.h>
+    #include <sys/stat.h>
+    // Windows stat.h doesn't define these constants
+    #ifndef S_IFMT
+        #define S_IFMT   0170000
+    #endif
+    #ifndef S_IFREG
+        #define S_IFREG  0100000
+    #endif
+    #ifndef S_IFCHR
+        #define S_IFCHR  0020000
+    #endif
 #endif
 
 #include <stdio.h>

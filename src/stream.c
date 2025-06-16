@@ -4,7 +4,9 @@
 #include <stdbool.h>
 #include <limits.h>
 #include <assert.h>
+#ifndef WIN32
 #include <unistd.h>
+#endif
 #include <string.h>
 
 #include "platform.h"

@@ -102,11 +102,12 @@ jobs:
                 /p:RuntimeLibrary=MultiThreaded `
                 /p:CharacterSet=Unicode `
                 /p:WholeProgramOptimization=true `
-                /verbosity:minimal `
+                /verbosity:normal `
                 /m
               
               if ($LASTEXITCODE -ne 0) {
-                Write-Error "Failed to build $project"
+                Write-Error "Failed to build $project with exit code $LASTEXITCODE"
+                Write-Host "Build log errors for $project"
                 exit 1
               } else {
                 Write-Host "Successfully built $project"
@@ -131,7 +132,7 @@ jobs:
               /p:WholeProgramOptimization=true `
               /p:VcpkgTriplet=x86-windows-static `
               /p:VcpkgRoot=C:\vcpkg `
-              /verbosity:minimal `
+              /verbosity:normal `
               /m
             
             if ($LASTEXITCODE -ne 0) {
@@ -147,7 +148,7 @@ jobs:
                 /p:RuntimeLibrary=MultiThreaded `
                 /p:CharacterSet=Unicode `
                 /p:WholeProgramOptimization=true `
-                /verbosity:minimal `
+                /verbosity:normal `
                 /m
               
               if ($LASTEXITCODE -ne 0) {
@@ -223,4 +224,5 @@ jobs:
             obj/blackbox_decode.exe
             obj/blackbox_render.exe
             obj/encoder_testbed.exe
+            obj/*.dll
           if-no-files-found: warn

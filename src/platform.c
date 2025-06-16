@@ -2,6 +2,21 @@
 
 #ifdef WIN32
     #include <direct.h>
+    #include <io.h>
+    #include <sys/stat.h>
+    #include <sys/types.h>
+    // Windows compatibility
+    #define fstat _fstat
+    // Windows stat.h doesn't define these constants
+    #ifndef S_IFMT
+        #define S_IFMT   0170000
+    #endif
+    #ifndef S_IFREG
+        #define S_IFREG  0100000
+    #endif
+    #ifndef S_IFCHR
+        #define S_IFCHR  0020000
+    #endif
 #else
     #include <sys/stat.h>
     #include <stdlib.h>
@@ -138,7 +153,7 @@ bool mmap_file(fileMapping_t *mapping, int fd)
                 return false;
             }
 
-            mapping->data = MapViewOfFile(mapping->mapping, FILE_MAP_READ, 0, 0, mapping->stats.st_size);
+            mapping->data = MapViewOfFile(mapping->mapping, FILE_MAP_READ, 0, 0, (SIZE_T)mapping->stats.st_size);
 
             if (mapping->data == NULL) {
                 CloseHandle(mapping->mapping);
