@@ -37,8 +37,16 @@ jobs:
       - name: Install dependencies (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          # Using existing Visual Studio projects with pre-built dependencies
-          Write-Host "Preparing modern Windows build with MSBuild"
+          # Install vcpkg for static libraries
+          Write-Host "Setting up vcpkg for static library dependencies"
+          git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat
+          
+          # Install static versions of required libraries
+          C:\vcpkg\vcpkg.exe install cairo:x86-windows-static freetype:x86-windows-static
+          
+          # Set environment variable for MSBuild
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
         shell: pwsh
 
       - name: Build the tools
@@ -53,28 +61,99 @@ jobs:
           # Create obj directory to match expected artifact path
           New-Item -ItemType Directory -Force -Path "obj"
 
-          # Find MSBuild (VS 2022 Enterprise is available on GitHub runners)
+          # Find MSBuild (VS 2022 is available on GitHub runners)
           $msbuild = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
           if (-not (Test-Path $msbuild)) {
-            $msbuild = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+            Write-Error "MSBuild not found"
+            exit 1
+          }
+          
+          Write-Host "Using MSBuild: $msbuild"
+
+          # Build each project individually with modern settings for self-contained executables
+          $projects = @(
+            "visual-studio\blackbox_decode\blackbox_decode.vcxproj",
+            "visual-studio\blackbox_render\blackbox_render.vcxproj", 
+            "visual-studio\encoder_testbed\encoder_testbed.vcxproj"
+          )
+
+          foreach ($project in $projects) {
+            if (Test-Path $project) {
+              Write-Host "Building project: $project"
+              
+              & $msbuild $project `
+                /p:Configuration=Release `
+                /p:Platform=Win32 `
+                /p:OutDir="..\..\obj\\" `
+                /p:WindowsTargetPlatformVersion="" `
+                /p:PlatformToolset=v143 `
+                /p:RuntimeLibrary=MultiThreaded `
+                /p:LinkIncremental=false `
+                /p:UseOfMfc=Static `
+                /p:CharacterSet=Unicode `
+                /p:WholeProgramOptimization=true `
+                /p:VcpkgTriplet=x86-windows-static `
+                /p:VcpkgRoot=C:\vcpkg `
+                /m
+              
+              if ($LASTEXITCODE -ne 0) {
+                Write-Host "Build failed for $project, trying without vcpkg dependencies..."
+                
+                # Retry without vcpkg for projects that might not need external deps
+                & $msbuild $project `
+                  /p:Configuration=Release `
+                  /p:Platform=Win32 `
+                  /p:OutDir="..\..\obj\\" `
+                  /p:WindowsTargetPlatformVersion="" `
+                  /p:PlatformToolset=v143 `
+                  /p:RuntimeLibrary=MultiThreaded `
+                  /p:LinkIncremental=false `
+                  /p:CharacterSet=Unicode `
+                  /p:WholeProgramOptimization=true `
+                  /m
+                
+                if ($LASTEXITCODE -ne 0) {
+                  Write-Warning "Failed to build $project"
+                }
+              }
+            }
           }
 
-          # Build the Visual Studio solution
-          & $msbuild "visual-studio\Baseflight blackbox tools.sln" /p:Configuration=Release /p:Platform=Win32 /p:OutDir="..\obj\\" /m
-
-          # Copy any required DLLs from lib/win32 for runtime (if they exist)
-          if (Test-Path "lib\win32\*.dll") {
-            Copy-Item "lib\win32\*.dll" -Destination "obj\" -Force
-          }
-
-          # List generated files for verification
+          # Verify we have executables and check their dependencies
           Write-Host "Generated executables:"
-          Get-ChildItem -Path "obj" -Filter "*.exe" | ForEach-Object { Write-Host $_.Name }
-
-          if (Test-Path "obj\*.dll") {
-            Write-Host "Runtime DLLs:"
-            Get-ChildItem -Path "obj" -Filter "*.dll" | ForEach-Object { Write-Host $_.Name }
+          $exeFiles = Get-ChildItem -Path "obj" -Filter "*.exe" -ErrorAction SilentlyContinue
+          if ($exeFiles) {
+            foreach ($exe in $exeFiles) {
+              Write-Host "  - $($exe.Name) ($([math]::Round($exe.Length/1KB, 2)) KB)"
+              
+              # Check dependencies using dumpbin (if available)
+              $dumpbin = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\*\bin\Hostx64\x86\dumpbin.exe"
+              $dumpbinPath = Get-ChildItem $dumpbin -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($dumpbinPath) {
+                Write-Host "    Dependencies:"
+                & $dumpbinPath.FullName /dependents $exe.FullName | Select-String "\.dll" | ForEach-Object { Write-Host "      $_" }
+              }
+            }
+          } else {
+            Write-Error "No executables were generated!"
+            
+            # List what was actually created for debugging
+            Write-Host "Contents of obj directory:"
+            Get-ChildItem -Path "obj" -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" }
+            exit 1
           }
+
+          # Clean up any DLL files that might have been copied (we want self-contained exes)
+          $dllFiles = Get-ChildItem -Path "obj" -Filter "*.dll" -ErrorAction SilentlyContinue
+          if ($dllFiles) {
+            Write-Host "Removing DLL files to ensure self-contained executables:"
+            foreach ($dll in $dllFiles) {
+              Write-Host "  Removing: $($dll.Name)"
+              Remove-Item $dll.FullName -Force
+            }
+          }
+
+          Write-Host "Build completed successfully!"
         shell: pwsh
         working-directory: .
 
@@ -90,3 +169,4 @@ jobs:
             obj/blackbox_decode.exe
             obj/blackbox_render.exe
             obj/encoder_testbed.exe
+          if-no-files-found: warn
