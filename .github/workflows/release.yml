@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Release
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          
+          # Create ZIP files for each platform
+          cd artifacts
+          
+          # Windows
+          if [ -d "blackbox-tools-Windows" ]; then
+            cd blackbox-tools-Windows
+            zip -r ../../release-assets/blackbox-tools-Windows.zip .
+            cd ..
+          fi
+          
+          # Linux
+          if [ -d "blackbox-tools-Linux" ]; then
+            cd blackbox-tools-Linux
+            tar -czf ../../release-assets/blackbox-tools-Linux.tar.gz *
+            cd ..
+          fi
+          
+          # macOS
+          if [ -d "blackbox-tools-macOS" ]; then
+            cd blackbox-tools-macOS
+            tar -czf ../../release-assets/blackbox-tools-macOS.tar.gz *
+            cd ..
+          fi
+          
+          cd ..
+          ls -la release-assets/
+
+      - name: Generate release notes
+        run: |
+          cat > release-notes.md << 'EOF'
+          # Blackbox Tools Release
+          
+          ## Downloads
+          
+          Choose the appropriate download for your platform:
+          
+          - **Windows**: `blackbox-tools-Windows.zip` - Extract and run executables directly
+          - **Linux**: `blackbox-tools-Linux.tar.gz` - Extract and add to PATH or run directly  
+          - **macOS**: `blackbox-tools-macOS.tar.gz` - Extract and add to PATH or run directly
+          
+          ## Tools Included
+          
+          - **blackbox_decode**: Convert flight log binary files to CSV format
+          - **blackbox_render**: Generate PNG images/video frames from flight logs
+          - **encoder_testbed**: Development tool for testing encoding algorithms
+          
+          ## Windows Usage
+          
+          1. Extract the ZIP file to a folder
+          2. Drag and drop `.TXT` log files onto `blackbox_decode.exe` for quick conversion
+          3. Or use command line: `blackbox_decode.exe LOG00001.TXT`
+          
+          ## Linux/macOS Usage
+          
+          1. Extract the archive: `tar -xzf blackbox-tools-*.tar.gz`
+          2. Run tools directly: `./blackbox_decode LOG00001.TXT`
+          3. Or add to PATH for system-wide access
+          
+          ## Requirements
+          
+          - **Windows**: Windows 10 or later (64-bit recommended)
+          - **Linux**: Modern distribution with glibc 2.17+
+          - **macOS**: macOS 10.14 or later
+          
+          ## Documentation
+          
+          For detailed usage instructions, see the [README](https://github.com/betaflight/blackbox-tools/blob/master/Readme.md).
+          For build instructions, see [BUILD.md](https://github.com/betaflight/blackbox-tools/blob/master/BUILD.md).
+          EOF
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Blackbox Tools ${{ github.event.inputs.tag || github.ref_name }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          files: |
+            release-assets/*
+          generate_release_notes: true
