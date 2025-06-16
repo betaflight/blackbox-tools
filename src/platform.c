@@ -6,7 +6,8 @@
     #include <sys/stat.h>
     #include <sys/types.h>
     // Windows compatibility
-    #define fstat _fstat
+    #define fstat _fstat64
+    #define stat _stat64
     // Windows stat.h doesn't define these constants
     #ifndef S_IFMT
         #define S_IFMT   0170000

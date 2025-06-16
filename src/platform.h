@@ -68,7 +68,11 @@ typedef struct fileMapping_t {
 
     int fd;
     char *data;
+#ifdef WIN32
+    struct _stat64 stats;
+#else
     struct stat stats;
+#endif
     size_t size;
 } fileMapping_t;
 

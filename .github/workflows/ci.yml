@@ -1,27 +1,40 @@
 name: CI
 
-on: 
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
   workflow_call:
 
 jobs:
   build:
     name: Build (${{ matrix.name }})
-    runs-on:  ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - name: Linux
             os: ubuntu-latest
-
+            
           - name: macOS
-            os: macos-13
-
+            os: macos-latest
+            
           - name: Windows
             os: windows-latest
       fail-fast: false
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup vcpkg (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: '${{ github.workspace }}/vcpkg'
+          vcpkgGitCommitId: '2024.11.16'
+          vcpkgJsonGlob: '**/vcpkg.json'
 
       - name: Install dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -30,196 +43,83 @@ jobs:
           sudo apt-get install -y pkg-config libfreetype6-dev libcairo2-dev
 
       - name: Install dependencies (macOS)
-        if: matrix.os == 'macos-13'
+        if: matrix.os == 'macos-latest'
         run: |
           brew install pkg-config freetype cairo
 
-      - name: Install dependencies (Windows)
+      - name: Setup MSBuild (Windows)
         if: matrix.os == 'windows-latest'
-        run: |
-          Write-Host "Setting up Windows build environment"
-          
-          # Install vcpkg for Cairo/FreeType dependencies
-          git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
-          C:\vcpkg\bootstrap-vcpkg.bat
-          
-          # Install static versions of Cairo dependencies
-          Write-Host "Installing Cairo and FreeType via vcpkg..."
-          C:\vcpkg\vcpkg.exe install cairo:x86-windows-static freetype:x86-windows-static --recurse
-          
-          # Set environment variables
-          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
-        shell: pwsh
+        uses: microsoft/setup-msbuild@v2
 
-      - name: Build the tools
+      - name: Build the tools (Unix)
         if: matrix.os != 'windows-latest'
         shell: bash
-        working-directory: .
         run: make
 
       - name: Build the tools (Windows)
         if: matrix.os == 'windows-latest'
+        shell: pwsh
         run: |
-          # Create obj directory to match expected artifact path
+          # Create output directory
           New-Item -ItemType Directory -Force -Path "obj"
-
-          # Find MSBuild
-          $msbuild = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
-          if (-not (Test-Path $msbuild)) {
-            Write-Error "MSBuild not found at $msbuild"
-            exit 1
-          }
           
-          Write-Host "Using MSBuild: $msbuild"
-
-          # Detect the latest Windows SDK version
-          $sdkRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\Include"
-          if (Test-Path $sdkRoot) {
-            $latestSdk = Get-ChildItem $sdkRoot | Where-Object { $_.Name -match "10\.0\.\d+\.\d+" } | Sort-Object Name -Descending | Select-Object -First 1
-            $sdkVersion = $latestSdk.Name
-            Write-Host "Detected Windows SDK version: $sdkVersion"
-          } else {
-            $sdkVersion = "10.0"
-            Write-Host "Using default SDK version: $sdkVersion"
-          }
-
-          # Build simple projects first (no external dependencies)
-          $simpleProjects = @(
+          # Build all projects
+          $projects = @(
             "visual-studio\blackbox_decode\blackbox_decode.vcxproj",
-            "visual-studio\encoder_testbed\encoder_testbed.vcxproj"
+            "visual-studio\encoder_testbed\encoder_testbed.vcxproj",
+            "visual-studio\blackbox_render\blackbox_render.vcxproj"
           )
-
-          foreach ($project in $simpleProjects) {
+          
+          $success = $true
+          foreach ($project in $projects) {
             if (Test-Path $project) {
-              Write-Host "Building simple project: $project"
+              Write-Host "Building $project..."
               
-              & $msbuild $project `
+              msbuild $project `
                 /p:Configuration=Release `
-                /p:Platform=Win32 `
+                /p:Platform=x64 `
                 /p:OutDir="..\..\obj\\" `
-                /p:WindowsTargetPlatformVersion=$sdkVersion `
-                /p:PlatformToolset=v143 `
-                /p:RuntimeLibrary=MultiThreaded `
-                /p:CharacterSet=Unicode `
-                /p:WholeProgramOptimization=true `
-                /verbosity:normal `
-                /m
+                /p:VcpkgEnabled=true `
+                /p:VcpkgRoot="${{ github.workspace }}\vcpkg" `
+                /p:VcpkgTriplet=x64-windows `
+                /verbosity:minimal `
+                /maxcpucount
               
               if ($LASTEXITCODE -ne 0) {
-                Write-Error "Failed to build $project with exit code $LASTEXITCODE"
-                Write-Host "Build log errors for $project"
-                exit 1
+                Write-Error "Failed to build $project"
+                $success = $false
               } else {
                 Write-Host "Successfully built $project"
               }
-            }
-          }
-
-          # Build blackbox_render with Cairo/FreeType dependencies
-          $renderProject = "visual-studio\blackbox_render\blackbox_render.vcxproj"
-          if (Test-Path $renderProject) {
-            Write-Host "Building render project with dependencies: $renderProject"
-            
-            # Try with vcpkg first
-            & $msbuild $renderProject `
-              /p:Configuration=Release `
-              /p:Platform=Win32 `
-              /p:OutDir="..\..\obj\\" `
-              /p:WindowsTargetPlatformVersion=$sdkVersion `
-              /p:PlatformToolset=v143 `
-              /p:RuntimeLibrary=MultiThreaded `
-              /p:CharacterSet=Unicode `
-              /p:WholeProgramOptimization=true `
-              /p:VcpkgTriplet=x86-windows-static `
-              /p:VcpkgRoot=C:\vcpkg `
-              /verbosity:normal `
-              /m
-            
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "vcpkg build failed, trying with existing libraries..."
-              
-              # Fallback: use existing lib/win32 libraries
-              & $msbuild $renderProject `
-                /p:Configuration=Release `
-                /p:Platform=Win32 `
-                /p:OutDir="..\..\obj\\" `
-                /p:WindowsTargetPlatformVersion=$sdkVersion `
-                /p:PlatformToolset=v143 `
-                /p:RuntimeLibrary=MultiThreaded `
-                /p:CharacterSet=Unicode `
-                /p:WholeProgramOptimization=true `
-                /verbosity:normal `
-                /m
-              
-              if ($LASTEXITCODE -ne 0) {
-                Write-Warning "Failed to build blackbox_render - continuing with other tools"
-              } else {
-                Write-Host "Successfully built blackbox_render with fallback approach"
-                
-                # Copy required DLLs for runtime
-                if (Test-Path "lib\win32\*.dll") {
-                  Write-Host "Copying required DLLs for blackbox_render..."
-                  Copy-Item "lib\win32\*.dll" -Destination "obj\" -Force
-                }
-              }
             } else {
-              Write-Host "Successfully built blackbox_render with vcpkg"
+              Write-Warning "Project file not found: $project"
             }
           }
-
-          # Verify executables and check their dependencies
-          Write-Host "Checking generated executables:"
+          
+          if (-not $success) {
+            exit 1
+          }
+          
+          # Verify executables were created
           $exeFiles = Get-ChildItem -Path "obj" -Filter "*.exe" -ErrorAction SilentlyContinue
           if ($exeFiles) {
+            Write-Host "Generated $($exeFiles.Count) executable(s):"
             foreach ($exe in $exeFiles) {
-              Write-Host "  ✓ $($exe.Name) ($([math]::Round($exe.Length/1KB, 2)) KB)"
-              
-              # Test if executable runs (basic smoke test)
-              try {
-                $testResult = & "$($exe.FullName)" "--help" 2>&1
-                if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1) {
-                  Write-Host "    ⚠️  Warning: Executable may have runtime issues"
-                } else {
-                  Write-Host "    ✓ Executable appears to be working"
-                }
-              } catch {
-                Write-Host "    ⚠️  Could not test executable: $($_.Exception.Message)"
-              }
+              Write-Host "  - $($exe.Name) ($([math]::Round($exe.Length/1KB, 2)) KB)"
             }
           } else {
             Write-Error "No executables were generated!"
-            
-            # Debug: List what was created
-            Write-Host "Contents of obj directory:"
-            if (Test-Path "obj") {
-              Get-ChildItem -Path "obj" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName)" }
-            } else {
-              Write-Host "  obj directory does not exist"
-            }
             exit 1
           }
-
-          # Show runtime dependencies
-          $dllFiles = Get-ChildItem -Path "obj" -Filter "*.dll" -ErrorAction SilentlyContinue
-          if ($dllFiles) {
-            Write-Host "Runtime DLLs:"
-            foreach ($dll in $dllFiles) {
-              Write-Host "  - $($dll.Name)"
-            }
-          }
-
-          Write-Host "Build completed successfully! Generated $($exeFiles.Count) executable(s)."
-        shell: pwsh
-        working-directory: .
 
       - name: Publish build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Blackbox tools artifacts ${{matrix.name}}
-          overwrite: true
+          name: blackbox-tools-${{ matrix.name }}
+          retention-days: 30
           path: |
             obj/blackbox_decode
-            obj/blackbox_render
+            obj/blackbox_render  
             obj/encoder_testbed
             obj/blackbox_decode.exe
             obj/blackbox_render.exe

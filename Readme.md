@@ -1,6 +1,6 @@
 # Blackbox flight data recorder tools
 
-[![Build](https://img.shields.io/github/actions/workflow/status/betaflight/blackbox-tools/nightly.yml?branch=master)](https://github.com/betaflight/blackbox-tools/actions/workflows/nightly.yml) [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Build](https://img.shields.io/github/actions/workflow/status/betaflight/blackbox-tools/ci.yml?branch=master)](https://github.com/betaflight/blackbox-tools/actions/workflows/ci.yml) [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 
 ![Rendered flight log frame](screenshots/blackbox-screenshot-1.jpg)
@@ -11,7 +11,17 @@ These tools allow you to convert flight data logs recorded by Cleanflight's Blac
 (comma-separated values) for analysis, or into a series of PNG files which you could turn into a video.
 
 You can download the latest executable versions of these tools for Mac or Windows from the "releases" tab above. If
-you're running Linux, you must build the tools from source (instructions are further down this page).
+you're running Linux, you must build the tools from source (instructions are in [BUILD.md](BUILD.md)).
+
+## Quick Start
+
+### Windows Users
+1. Download the latest release from the [releases page](https://github.com/betaflight/blackbox-tools/releases)
+2. Extract the ZIP file to a folder of your choice
+3. Drag and drop your `.TXT` log files onto the `blackbox_decode.exe` to convert them to CSV
+
+### Developers
+See [BUILD.md](BUILD.md) for detailed build instructions for all platforms, including local development setup and CI/CD pipeline information.
 
 ## Using the blackbox_decode tool
 

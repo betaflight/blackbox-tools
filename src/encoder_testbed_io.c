@@ -2,6 +2,10 @@
 #include <stdarg.h>
 #include <limits.h>
 
+#ifdef WIN32
+#include <intrin.h>
+#endif
+
 #include "tools.h"
 
 #include "encoder_testbed_io.h"
@@ -134,7 +138,15 @@ void blackboxFlushBits() {
  */
 static int numBitsToStoreInteger(uint32_t i)
 {
+#ifdef WIN32
+    // Windows MSVC equivalent of __builtin_clz
+    unsigned long index;
+    _BitScanReverse(&index, i);
+    return index + 1;
+#else
+    // GCC builtin
     return sizeof(i) * CHAR_BIT - __builtin_clz(i);
+#endif
 }
 
 void blackboxWriteU32EliasDelta(uint32_t value)
