@@ -36,24 +36,47 @@ jobs:
 
       - name: Install dependencies (Windows)
         if: matrix.os == 'windows-latest'
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          install: >-
-            base-devel
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-freetype
-            mingw-w64-x86_64-cairo
-            make
-            perl
-            perl-Pod-Usage
+        run: |
+          # Using existing Visual Studio projects with pre-built dependencies
+          Write-Host "Preparing modern Windows build with MSBuild"
+        shell: pwsh
 
       - name: Build the tools
+        if: matrix.os != 'windows-latest'
         shell: bash
-        working-directory: .
+        working-directory: git
         run: make
+
+      - name: Build the tools (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          # Create obj directory to match expected artifact path
+          New-Item -ItemType Directory -Force -Path "obj"
+
+          # Find MSBuild (VS 2022 Enterprise is available on GitHub runners)
+          $msbuild = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+          if (-not (Test-Path $msbuild)) {
+            $msbuild = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+          }
+
+          # Build the Visual Studio solution
+          & $msbuild "visual-studio\Baseflight blackbox tools.sln" /p:Configuration=Release /p:Platform=Win32 /p:OutDir="..\obj\\" /m
+
+          # Copy any required DLLs from lib/win32 for runtime (if they exist)
+          if (Test-Path "lib\win32\*.dll") {
+            Copy-Item "lib\win32\*.dll" -Destination "obj\" -Force
+          }
+
+          # List generated files for verification
+          Write-Host "Generated executables:"
+          Get-ChildItem -Path "obj" -Filter "*.exe" | ForEach-Object { Write-Host $_.Name }
+
+          if (Test-Path "obj\*.dll") {
+            Write-Host "Runtime DLLs:"
+            Get-ChildItem -Path "obj" -Filter "*.dll" | ForEach-Object { Write-Host $_.Name }
+          }
+        shell: pwsh
+        working-directory: git
 
       - name: Publish build artifacts
         uses: actions/upload-artifact@v4
