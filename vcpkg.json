@@ -1,0 +1,10 @@
+{
+  "name": "blackbox-tools",
+  "version-string": "1.0.0",
+  "description": "Blackbox flight data recorder tools for Betaflight",
+  "homepage": "https://github.com/betaflight/blackbox-tools",
+  "dependencies": [
+    "cairo",
+    "freetype"
+  ]
+}

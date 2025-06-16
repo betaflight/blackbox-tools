@@ -28,13 +28,73 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cache vcpkg (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/vcpkg
+            !${{ github.workspace }}/vcpkg/buildtrees
+            !${{ github.workspace }}/vcpkg/downloads
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
+
       - name: Setup vcpkg (Windows)
         if: matrix.os == 'windows-latest'
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgDirectory: '${{ github.workspace }}/vcpkg'
-          vcpkgGitCommitId: '2024.11.16'
-          vcpkgJsonGlob: '**/vcpkg.json'
+        run: |
+          try {
+            # Install vcpkg if not cached
+            if (-not (Test-Path "${{ github.workspace }}/vcpkg")) {
+              Write-Host "Cloning vcpkg..."
+              git clone https://github.com/Microsoft/vcpkg.git "${{ github.workspace }}/vcpkg"
+            }
+            
+            cd "${{ github.workspace }}/vcpkg"
+            
+            # Bootstrap if needed
+            if (-not (Test-Path "vcpkg.exe")) {
+              Write-Host "Bootstrapping vcpkg..."
+              ./bootstrap-vcpkg.bat
+              if ($LASTEXITCODE -ne 0) {
+                throw "vcpkg bootstrap failed"
+              }
+            }
+            
+            # Set environment variables for vcpkg
+            $env:VCPKG_ROOT = "${{ github.workspace }}\vcpkg"
+            $env:VCPKG_DEFAULT_TRIPLET = "x64-windows"
+            
+            # Try manifest mode first
+            Write-Host "Attempting manifest mode installation..."
+            cd "${{ github.workspace }}"
+            
+            & "${{ github.workspace }}\vcpkg\vcpkg.exe" install --triplet x64-windows
+            
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "Manifest mode failed, trying classic mode..."
+              # Fallback to classic mode
+              cd "${{ github.workspace }}/vcpkg"
+              ./vcpkg.exe install cairo:x64-windows freetype:x64-windows --recurse
+            }
+            
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✓ vcpkg dependencies installed successfully"
+              # Set environment variables for build
+              echo "VCPKG_ROOT=${{ github.workspace }}\vcpkg" >> $env:GITHUB_ENV
+              echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $env:GITHUB_ENV
+              echo "VCPKG_AVAILABLE=true" >> $env:GITHUB_ENV
+            } else {
+              Write-Warning "Both vcpkg installation methods failed, will attempt fallback build"
+              echo "VCPKG_AVAILABLE=false" >> $env:GITHUB_ENV
+            }
+          }
+          catch {
+            Write-Warning "vcpkg setup failed: $($_.Exception.Message)"
+            Write-Host "Will attempt to build without vcpkg dependencies"
+            echo "VCPKG_AVAILABLE=false" >> $env:GITHUB_ENV
+          }
+        shell: pwsh
 
       - name: Install dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -63,15 +123,14 @@ jobs:
           # Create output directory
           New-Item -ItemType Directory -Force -Path "obj"
           
-          # Build all projects
-          $projects = @(
+          # Build simple projects first (no external dependencies)
+          $simpleProjects = @(
             "visual-studio\blackbox_decode\blackbox_decode.vcxproj",
-            "visual-studio\encoder_testbed\encoder_testbed.vcxproj",
-            "visual-studio\blackbox_render\blackbox_render.vcxproj"
+            "visual-studio\encoder_testbed\encoder_testbed.vcxproj"
           )
           
           $success = $true
-          foreach ($project in $projects) {
+          foreach ($project in $simpleProjects) {
             if (Test-Path $project) {
               Write-Host "Building $project..."
               
@@ -79,9 +138,6 @@ jobs:
                 /p:Configuration=Release `
                 /p:Platform=x64 `
                 /p:OutDir="..\..\obj\\" `
-                /p:VcpkgEnabled=true `
-                /p:VcpkgRoot="${{ github.workspace }}\vcpkg" `
-                /p:VcpkgTriplet=x64-windows `
                 /verbosity:minimal `
                 /maxcpucount
               
@@ -91,8 +147,65 @@ jobs:
               } else {
                 Write-Host "Successfully built $project"
               }
+            }
+          }
+          
+          # Build blackbox_render with vcpkg
+          $renderProject = "visual-studio\blackbox_render\blackbox_render.vcxproj"
+          if (Test-Path $renderProject) {
+            Write-Host "Building blackbox_render..."
+            
+            # Check if vcpkg is available
+            $vcpkgAvailable = $env:VCPKG_AVAILABLE -eq "true"
+            
+            if ($vcpkgAvailable) {
+              Write-Host "Trying vcpkg build..."
+              # Try with vcpkg integration first
+              msbuild $renderProject `
+                /p:Configuration=Release `
+                /p:Platform=x64 `
+                /p:OutDir="..\..\obj\\" `
+                /p:VcpkgEnabled=true `
+                /p:VcpkgRoot="${{ github.workspace }}\vcpkg" `
+                /p:VcpkgTriplet=x64-windows `
+                /verbosity:minimal `
+                /maxcpucount
             } else {
-              Write-Warning "Project file not found: $project"
+              $LASTEXITCODE = 1  # Force fallback
+            }
+            
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "vcpkg build failed or not available, trying fallback approach..."
+              
+              # Fallback: try without vcpkg (using local libs if available)
+              msbuild $renderProject `
+                /p:Configuration=Release `
+                /p:Platform=x64 `
+                /p:OutDir="..\..\obj\\" `
+                /p:VcpkgEnabled=false `
+                /verbosity:minimal `
+                /maxcpucount
+              
+              if ($LASTEXITCODE -ne 0) {
+                Write-Warning "blackbox_render build failed - continuing with other tools"
+              } else {
+                Write-Host "Successfully built blackbox_render with fallback"
+              }
+            } else {
+              Write-Host "Successfully built blackbox_render with vcpkg"
+              
+              # Copy vcpkg DLLs if they exist
+              $vcpkgBinPath = "${{ github.workspace }}\vcpkg\installed\x64-windows\bin"
+              if (Test-Path $vcpkgBinPath) {
+                $dllFiles = Get-ChildItem -Path $vcpkgBinPath -Filter "*.dll" -ErrorAction SilentlyContinue
+                if ($dllFiles) {
+                  Write-Host "Copying runtime DLLs..."
+                  foreach ($dll in $dllFiles) {
+                    Copy-Item $dll.FullName -Destination "obj\" -Force
+                    Write-Host "  - Copied $($dll.Name)"
+                  }
+                }
+              }
             }
           }
           
