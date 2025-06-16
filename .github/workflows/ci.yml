@@ -38,6 +38,17 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           Write-Host "Setting up Windows build environment"
+          
+          # Install vcpkg for Cairo/FreeType dependencies
+          git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat
+          
+          # Install static versions of Cairo dependencies
+          Write-Host "Installing Cairo and FreeType via vcpkg..."
+          C:\vcpkg\vcpkg.exe install cairo:x86-windows-static freetype:x86-windows-static --recurse
+          
+          # Set environment variables
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
         shell: pwsh
 
       - name: Build the tools
@@ -52,95 +63,111 @@ jobs:
           # Create obj directory to match expected artifact path
           New-Item -ItemType Directory -Force -Path "obj"
 
-          # Setup Visual Studio environment and call vcvars to set paths
-          $vsPath = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise"
-          $devCmd = "$vsPath\Common7\Tools\VsDevCmd.bat"
-          $msbuild = "$vsPath\MSBuild\Current\Bin\MSBuild.exe"
-          
-          if (-not (Test-Path $devCmd)) {
-            Write-Error "Visual Studio Developer Command Prompt not found"
+          # Find MSBuild
+          $msbuild = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+          if (-not (Test-Path $msbuild)) {
+            Write-Error "MSBuild not found at $msbuild"
             exit 1
           }
           
-          Write-Host "Using Visual Studio from: $vsPath"
+          Write-Host "Using MSBuild: $msbuild"
 
-          # Build projects using Developer Command Prompt environment
-          $projects = @(
+          # Detect the latest Windows SDK version
+          $sdkRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\Include"
+          if (Test-Path $sdkRoot) {
+            $latestSdk = Get-ChildItem $sdkRoot | Where-Object { $_.Name -match "10\.0\.\d+\.\d+" } | Sort-Object Name -Descending | Select-Object -First 1
+            $sdkVersion = $latestSdk.Name
+            Write-Host "Detected Windows SDK version: $sdkVersion"
+          } else {
+            $sdkVersion = "10.0"
+            Write-Host "Using default SDK version: $sdkVersion"
+          }
+
+          # Build simple projects first (no external dependencies)
+          $simpleProjects = @(
             "visual-studio\blackbox_decode\blackbox_decode.vcxproj",
             "visual-studio\encoder_testbed\encoder_testbed.vcxproj"
           )
 
-          $buildSuccessful = $false
-
-          foreach ($project in $projects) {
+          foreach ($project in $simpleProjects) {
             if (Test-Path $project) {
-              Write-Host "Building project: $project"
+              Write-Host "Building simple project: $project"
               
-              # Create build script that uses Developer Command Prompt
-              $buildScript = @"
-@echo off
-call "$devCmd" -arch=x86
-if errorlevel 1 (
-    echo Failed to initialize Visual Studio environment
-    exit /b 1
-)
-
-echo Building with environment setup...
-"$msbuild" "$project" /p:Configuration=Release /p:Platform=Win32 /p:OutDir=..\..\obj\\ /p:PlatformToolset=v143 /p:RuntimeLibrary=MultiThreaded /p:LinkIncremental=false /p:CharacterSet=Unicode /p:WholeProgramOptimization=true /m
-
-echo Build exit code: %errorlevel%
-exit /b %errorlevel%
-"@
-              $buildScript | Out-File -FilePath "build_$($project -replace '[\\\/:]', '_').bat" -Encoding ASCII
+              & $msbuild $project `
+                /p:Configuration=Release `
+                /p:Platform=Win32 `
+                /p:OutDir="..\..\obj\\" `
+                /p:WindowsTargetPlatformVersion=$sdkVersion `
+                /p:PlatformToolset=v143 `
+                /p:RuntimeLibrary=MultiThreaded `
+                /p:CharacterSet=Unicode `
+                /p:WholeProgramOptimization=true `
+                /verbosity:minimal `
+                /m
               
-              $buildFile = "build_$($project -replace '[\\\/:]', '_').bat"
-              Write-Host "Executing build script: $buildFile"
-              
-              $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", $buildFile -Wait -PassThru -NoNewWindow
-              
-              if ($process.ExitCode -eq 0) {
-                Write-Host "Successfully built: $project"
-                $buildSuccessful = $true
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "Failed to build $project"
+                exit 1
               } else {
-                Write-Host "Build failed for: $project (Exit code: $($process.ExitCode))"
+                Write-Host "Successfully built $project"
               }
-              
-              Remove-Item $buildFile -Force -ErrorAction SilentlyContinue
             }
           }
 
-          # Try to build blackbox_render (may fail due to Cairo dependencies)
+          # Build blackbox_render with Cairo/FreeType dependencies
           $renderProject = "visual-studio\blackbox_render\blackbox_render.vcxproj"
-          if (Test-Path $renderProject -and $buildSuccessful) {
-            Write-Host "Attempting to build blackbox_render (requires Cairo)..."
+          if (Test-Path $renderProject) {
+            Write-Host "Building render project with dependencies: $renderProject"
             
-            $buildScript = @"
-@echo off
-call "$devCmd" -arch=x86
-"$msbuild" "$renderProject" /p:Configuration=Release /p:Platform=Win32 /p:OutDir=..\..\obj\\ /p:PlatformToolset=v143 /p:RuntimeLibrary=MultiThreaded /p:LinkIncremental=false /p:CharacterSet=Unicode /p:WholeProgramOptimization=true /m
-exit /b %errorlevel%
-"@
-            $buildScript | Out-File -FilePath "build_render.bat" -Encoding ASCII
+            # Try with vcpkg first
+            & $msbuild $renderProject `
+              /p:Configuration=Release `
+              /p:Platform=Win32 `
+              /p:OutDir="..\..\obj\\" `
+              /p:WindowsTargetPlatformVersion=$sdkVersion `
+              /p:PlatformToolset=v143 `
+              /p:RuntimeLibrary=MultiThreaded `
+              /p:CharacterSet=Unicode `
+              /p:WholeProgramOptimization=true `
+              /p:VcpkgTriplet=x86-windows-static `
+              /p:VcpkgRoot=C:\vcpkg `
+              /verbosity:minimal `
+              /m
             
-            $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "build_render.bat" -Wait -PassThru -NoNewWindow
-            
-            if ($process.ExitCode -eq 0) {
-              Write-Host "Successfully built blackbox_render"
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "vcpkg build failed, trying with existing libraries..."
               
-              # Copy required runtime DLLs for blackbox_render if they exist
-              if (Test-Path "lib\win32\*.dll") {
-                Write-Host "Copying required DLLs for blackbox_render..."
-                Copy-Item "lib\win32\*.dll" -Destination "obj\" -Force
+              # Fallback: use existing lib/win32 libraries
+              & $msbuild $renderProject `
+                /p:Configuration=Release `
+                /p:Platform=Win32 `
+                /p:OutDir="..\..\obj\\" `
+                /p:WindowsTargetPlatformVersion=$sdkVersion `
+                /p:PlatformToolset=v143 `
+                /p:RuntimeLibrary=MultiThreaded `
+                /p:CharacterSet=Unicode `
+                /p:WholeProgramOptimization=true `
+                /verbosity:minimal `
+                /m
+              
+              if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Failed to build blackbox_render - continuing with other tools"
+              } else {
+                Write-Host "Successfully built blackbox_render with fallback approach"
+                
+                # Copy required DLLs for runtime
+                if (Test-Path "lib\win32\*.dll") {
+                  Write-Host "Copying required DLLs for blackbox_render..."
+                  Copy-Item "lib\win32\*.dll" -Destination "obj\" -Force
+                }
               }
             } else {
-              Write-Host "blackbox_render build failed - this is expected due to Cairo dependencies"
+              Write-Host "Successfully built blackbox_render with vcpkg"
             }
-            
-            Remove-Item "build_render.bat" -Force -ErrorAction SilentlyContinue
           }
 
-          # Verify we have executables
-          Write-Host "Generated executables:"
+          # Verify executables and check their dependencies
+          Write-Host "Checking generated executables:"
           $exeFiles = Get-ChildItem -Path "obj" -Filter "*.exe" -ErrorAction SilentlyContinue
           if ($exeFiles) {
             foreach ($exe in $exeFiles) {
@@ -158,38 +185,29 @@ exit /b %errorlevel%
                 Write-Host "    ⚠️  Could not test executable: $($_.Exception.Message)"
               }
             }
-            
-            # Show DLL dependencies if any
-            $dllFiles = Get-ChildItem -Path "obj" -Filter "*.dll" -ErrorAction SilentlyContinue
-            if ($dllFiles) {
-              Write-Host "Runtime DLLs (for blackbox_render):"
-              foreach ($dll in $dllFiles) {
-                Write-Host "  - $($dll.Name)"
-              }
-            }
-            
-            Write-Host "Build completed successfully!"
           } else {
             Write-Error "No executables were generated!"
             
-            # Debug information
-            Write-Host "Debug information:"
+            # Debug: List what was created
             Write-Host "Contents of obj directory:"
             if (Test-Path "obj") {
-              Get-ChildItem -Path "obj" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { 
-                Write-Host "  $($_.FullName)" 
-              }
+              Get-ChildItem -Path "obj" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName)" }
             } else {
               Write-Host "  obj directory does not exist"
             }
-            
-            Write-Host "Visual Studio paths:"
-            Write-Host "  VS Path: $vsPath (exists: $(Test-Path $vsPath))"
-            Write-Host "  DevCmd: $devCmd (exists: $(Test-Path $devCmd))"
-            Write-Host "  MSBuild: $msbuild (exists: $(Test-Path $msbuild))"
-            
             exit 1
           }
+
+          # Show runtime dependencies
+          $dllFiles = Get-ChildItem -Path "obj" -Filter "*.dll" -ErrorAction SilentlyContinue
+          if ($dllFiles) {
+            Write-Host "Runtime DLLs:"
+            foreach ($dll in $dllFiles) {
+              Write-Host "  - $($dll.Name)"
+            }
+          }
+
+          Write-Host "Build completed successfully! Generated $($exeFiles.Count) executable(s)."
         shell: pwsh
         working-directory: .
 
