@@ -97,6 +97,9 @@ ifneq (,$(IS_WINDOWS))
 	# Windows/MINGW build using MSYS2 packages
 	INCLUDE_DIRS += $(ROOT)/lib/getopt_mb_uni
 	
+	# Ensure updated INCLUDE_DIRS is reflected in CFLAGS
+	CFLAGS += $(addprefix -I,$(INCLUDE_DIRS))
+	
 	# Common Windows libraries for both executables
 	WINDOWS_COMMON_LIBS = -static-libgcc -static-libstdc++ -lole32 -loleaut32 -luuid -lm
 	
