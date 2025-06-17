@@ -156,36 +156,69 @@ If you just want to download some prebuilt versions of these tools, head to the 
 page. However, if you want to build your own binaries, or you're on Linux where we haven't provided binaries, please
 read on.
 
-The `blackbox_decode` tool for turning binary flight logs into CSV doesn't depend on any libraries, so can be built by
-running `make obj/blackbox_decode`. You can add the resulting `obj/blackbox_decode` program to your system path to
+### Dependency Overview
+The tools have been designed with minimal dependencies in mind:
+
+- **`blackbox_decode`** - Has no graphics dependencies and only requires standard C libraries. This tool can be built without installing Cairo or Freetype.
+- **`blackbox_render`** - Requires graphics libraries (Cairo and Freetype) for rendering PNG images and text.
+- **`encoder_testbed`** - Has no graphics dependencies, similar to the decoder.
+
+### Building Individual Tools
+You can build each tool independently based on your needs:
+
+```bash
+# Build decoder only (no graphics libraries required)
+make obj/blackbox_decode
+
+# Build renderer only (requires Cairo and Freetype)
+make obj/blackbox_render
+
+# Build encoder testbed only (no graphics libraries required)  
+make obj/encoder_testbed
+
+# Build all tools (requires all dependencies)
+make
+```
+
+The `blackbox_decode` tool for turning binary flight logs into CSV doesn't depend on any graphics libraries, so can be built by
+running `make obj/blackbox_decode` even if you don't have Cairo or Freetype installed. You can add the resulting `obj/blackbox_decode` program to your system path to
 make it easier to run.
 
 The `blackbox_render` tool renders a binary flight log into a series of PNG images which you can overlay on your flight
 video. Please read the section below that most closely matches your operating system for instructions on getting the `libcairo`
-library required to build the `blackbox_render` tool.
+and `libfreetype` libraries required to build the `blackbox_render` tool.
 
 #### Ubuntu
-You can get the tools required for building by entering these commands into the terminal:
+For building all tools, you can get the required dependencies by entering these commands into the terminal:
 
 ```bash
 sudo apt-get update
-sudo apt-get install make gcc libcairo2-dev
+# For building the decoder only (no graphics dependencies)
+sudo apt-get install make gcc
+
+# For building all tools including the renderer (with graphics dependencies)
+sudo apt-get install make gcc libcairo2-dev libfreetype6-dev
 ```
 
-Build blackbox_render by running `make obj/blackbox_render` (or build both tools by just running `make`).
+Build individual tools:
+- `make obj/blackbox_decode` - decoder only, no graphics libraries needed
+- `make obj/blackbox_render` - renderer only, requires graphics libraries
+- `make` - build all tools
 
 #### MacOSX
 The easiest way to build is to install the [Xcode development tool][], then install an environment like [Homebrew][] 
 or [MacPorts][] onto your system.
 
-From MacPorts, you would do this to get LibCairo:
+**Note**: You only need to install Cairo and Freetype if you want to build the `blackbox_render` tool. The decoder and encoder testbed can be built with just the basic development tools.
+
+From MacPorts, you would do this to get LibCairo (for building the renderer):
 
 ```bash
 sudo port selfupdate
 sudo port install cairo
 ```
 
-Afterwards you can run `make` to build blackbox_render.
+Afterwards you can run `make` to build all tools, or `make obj/blackbox_render` to build just the renderer.
 
 If you are using Homebrew instead of MacPorts, run:
 
@@ -193,7 +226,14 @@ If you are using Homebrew instead of MacPorts, run:
 brew install cairo --without-x11 pkg-config
 ```
 
-Afterwards you can run `make` to build blackbox_render.
+Afterwards you can run `make` to build all tools.
+
+To build only the decoder or encoder testbed (without graphics dependencies):
+```bash
+make obj/blackbox_decode
+# or
+make obj/encoder_testbed
+```
 
 If you get an error "Package 'xcb-shm', required by 'cairo', not found", your installed version of Cairo depends on
 X11 but your Homebrew X11 libraries are not on your pkgconfig path, so the build process cannot find them. Try this to
@@ -208,28 +248,75 @@ $ export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/opt/X11/lib/pkgconfig
 [MacPorts]: https://www.macports.org/
 
 #### Windows
-The tools can be built with Visual Studio Express 2013, just open up the solution in the `visual-studio/`
-folder. You'll need to include the .DLL files from `lib/win32` in the same directory as your built
-executable.
+The tools can be built with Visual Studio Express 2013 by opening the solution in the `visual-studio/` folder, or with MinGW/MSYS2 using the provided Makefile.
+
+##### Prerequisites
+- MSYS2 with MinGW-w64 toolchain
+- Basic build tools:
+  ```bash
+  pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-pkg-config
+  ```
+- Graphics libraries (only needed for `blackbox_render`):
+  ```bash
+  pacman -S mingw-w64-x86_64-cairo mingw-w64-x86_64-freetype
+  ```
+
+##### Building
+```bash
+# Build decoder only (minimal dependencies, no graphics libraries needed)
+make obj/blackbox_decode
+
+# Build renderer only (requires graphics libraries)
+make obj/blackbox_render
+
+# Build encoder testbed only (minimal dependencies)
+make obj/encoder_testbed
+
+# Build all tools (requires all dependencies)
+make
+```
+
+##### Troubleshooting Windows Builds
+If you encounter DLL dependency issues:
+
+```bash
+# Check what DLLs are required by each executable
+make windows-debug
+
+# Debug platform detection issues
+make debug-platform
+
+# Complete Windows build with automatic DLL collection if needed
+make windows-complete
+```
+
+Recent improvements (June 2025):
+- Fixed Windows platform detection for MSYS2/MINGW64 environments
+- Added debug targets for easier troubleshooting of build issues
+- Enhanced CI builds with better error diagnostics
+- Improved DLL handling for Windows distribution packages
+
+**Note**: The decoder (`blackbox_decode.exe`) and encoder testbed (`encoder_testbed.exe`) have minimal dependencies and should work without additional graphics DLLs. Only the renderer (`blackbox_render.exe`) requires graphics libraries (Cairo, FreeType) for font rendering and PNG image output, and may need graphics-related DLLs to be distributed with the executable.
 
 ## License
 
 This project is licensed under GPLv3.
 
 The binary version of `blackbox_render` for MacOSX is statically linked to these libraries:
-
- - libbz2 http://www.bzip.org/ (BSD-like)
- - zlib http://www.zlib.net/
- - libcairo & libpixman http://cairographics.org/ (LGPL)
- - libfreetype http://www.freetype.org/ (BSD-like/GPLv2)
- - libpng16 http://www.libpng.org/pub/png/libpng.html
+- libbz2 http://www.bzip.org/ (BSD-like)
+- zlib http://www.zlib.net/
+- libcairo & libpixman http://cairographics.org/ (LGPL)
+- libfreetype http://www.freetype.org/ (BSD-like/GPLv2)
+- libpng16 http://www.libpng.org/pub/png/libpng.html
  
-The windows binary of `blackbox_render` additionally ships with these DLLs:
+The Windows binary of `blackbox_render` includes these libraries:
+- [libiconv](https://www.gnu.org/software/libiconv/) (LGPL)
+- [libcairo & libpixman](http://cairographics.org/) (LGPL)
+- [libfreetype](http://www.freetype.org/) (BSD-like/GPLv2)
+- [libpng16](http://www.libpng.org/pub/png/libpng.html)
+- libglib, libintl, and zlib
 
- - libiconv https://www.gnu.org/software/libiconv/ (LGPL)
- - libfontconfig http://www.freedesktop.org/wiki/Software/fontconfig/
- - libxml2 http://xmlsoft.org/ (MIT)
- - liblzma http://tukaani.org/xz/ (Public Domain)
+The Windows binaries of `blackbox_decode` and `encoder_testbed` have minimal dependencies and typically require no additional DLLs.
  
 This font is included with both binary and source distributions:
 
