@@ -180,9 +180,8 @@ make obj/encoder_testbed
 make
 ```
 
-The `blackbox_decode` tool for turning binary flight logs into CSV doesn't depend on any graphics libraries, so can be built by
-running `make obj/blackbox_decode` even if you don't have Cairo or Freetype installed. You can add the resulting `obj/blackbox_decode` program to your system path to
-make it easier to run.
+The `blackbox_decode` tool doesn't depend on any graphics libraries, so it can be built by running `make obj/blackbox_decode` even if you don't have Cairo or Freetype installed.
+You can add the resulting `obj/blackbox_decode` program to your system path to make it easier to run.
 
 The `blackbox_render` tool renders a binary flight log into a series of PNG images which you can overlay on your flight
 video. Please read the section below that most closely matches your operating system for instructions on getting the `libcairo`
