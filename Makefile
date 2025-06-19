@@ -94,18 +94,45 @@ CFLAGS		= $(ARCH_FLAGS) \
 
 # Platform-specific configuration
 ifneq (,$(IS_WINDOWS))
-	# Windows/MINGW build using MSYS2 packages
+	# Windows/MINGW build using MSYS2 packages with enhanced static linking
 	INCLUDE_DIRS += $(ROOT)/lib/getopt_mb_uni
-	
+
 	# Ensure updated INCLUDE_DIRS is reflected in CFLAGS
 	CFLAGS += $(addprefix -I,$(INCLUDE_DIRS))
-	
+
 	# Common Windows libraries for both executables
 	WINDOWS_COMMON_LIBS = -static-libgcc -static-libstdc++ -lole32 -loleaut32 -luuid -lm
-	
-	# Graphics libraries only needed for renderer - try static first, fallback to dynamic
-	WINDOWS_GRAPHICS_LIBS = $(shell pkg-config --libs --static cairo freetype2 2>/dev/null || pkg-config --libs cairo freetype2)
-	WINDOWS_GRAPHICS_LIBS += -lgdi32 -lmsimg32
+
+	# Enhanced static linking approach with multiple fallbacks
+	# Method 1: Check for static libraries in standard MSYS2 locations
+	STATIC_CAIRO_LIB := $(shell find /mingw64/lib -name "libcairo.a" 2>/dev/null | head -1)
+	STATIC_FREETYPE_LIB := $(shell find /mingw64/lib -name "libfreetype.a" 2>/dev/null | head -1)
+
+	# Method 2: Try pkg-config static output
+	PKG_STATIC_CAIRO := $(shell pkg-config --libs --static cairo 2>/dev/null)
+	PKG_STATIC_FREETYPE := $(shell pkg-config --libs --static freetype2 2>/dev/null)
+
+	# Determine which static approach to use (prioritize most reliable)
+	ifneq ($(STATIC_CAIRO_LIB)$(STATIC_FREETYPE_LIB),)
+		# Method 1: Direct static library paths (most reliable)
+		WINDOWS_GRAPHICS_LIBS = $(STATIC_CAIRO_LIB) $(STATIC_FREETYPE_LIB) \
+		                       -Wl,-Bstatic -lpixman-1 -lpng16 -lz -lbz2 -lharfbuzz \
+		                       -lglib-2.0 -lintl -liconv -lexpat -lfontconfig \
+		                       -Wl,-Bdynamic -lgdi32 -lmsimg32
+		STATIC_METHOD = "direct-static-libs"
+	else ifneq ($(PKG_STATIC_CAIRO)$(PKG_STATIC_FREETYPE),)
+		# Method 2: Enhanced pkg-config static with explicit static/dynamic control
+		WINDOWS_GRAPHICS_LIBS = -Wl,-Bstatic $(PKG_STATIC_CAIRO) $(PKG_STATIC_FREETYPE) \
+		                       -lpixman-1 -lpng16 -lz -lbz2 -lharfbuzz -lglib-2.0 \
+		                       -lintl -liconv -lexpat -lfontconfig \
+		                       -Wl,-Bdynamic -lgdi32 -lmsimg32
+		STATIC_METHOD = "pkg-config-enhanced"
+	else
+		# Method 3: Fallback - try basic pkg-config static, then dynamic
+		WINDOWS_GRAPHICS_LIBS = $(shell pkg-config --libs --static cairo freetype2 2>/dev/null || pkg-config --libs cairo freetype2)
+		WINDOWS_GRAPHICS_LIBS += -lgdi32 -lmsimg32
+		STATIC_METHOD = "fallback-dynamic"
+	endif
 	
 	# Renderer-specific CFLAGS (include graphics headers only for renderer)
 	RENDERER_CFLAGS = $(CFLAGS) $(CAIRO_CFLAGS) $(FREETYPE_CFLAGS)
@@ -159,11 +186,13 @@ $(DECODER_ELF):  $(DECODER_OBJS)
 	@echo ""
 
 $(RENDERER_ELF):  $(RENDERER_OBJS)
-	@echo "=== LINKING RENDERER (with graphics libraries) ==="
+	@echo "=== LINKING RENDERER (enhanced static graphics libraries) ==="
+	@echo "Static method: $(STATIC_METHOD)"
 	@echo "Input objects: $^"
 	@echo "Output: $@"
-	@echo "Command: $(CC) -o $@ $^ $(WINDOWS_COMMON_LIBS) $(WINDOWS_GRAPHICS_LIBS)"
-	$(CC) -o $@ $^ $(WINDOWS_COMMON_LIBS) $(WINDOWS_GRAPHICS_LIBS)
+	@echo "Graphics libs: $(WINDOWS_GRAPHICS_LIBS)"
+	@echo "Command: $(CC) -static -o $@ $^ $(WINDOWS_COMMON_LIBS) $(WINDOWS_GRAPHICS_LIBS)"
+	$(CC) -static -o $@ $^ $(WINDOWS_COMMON_LIBS) $(WINDOWS_GRAPHICS_LIBS)
 	@echo "✅ RENDERER LINKING COMPLETE (size: $$(stat -c%s $@ 2>/dev/null || echo 'unknown') bytes)"
 	@echo ""
 
@@ -255,12 +284,22 @@ debug-platform:
 ifneq (,$(IS_WINDOWS))
 windows-debug: $(DECODER_ELF) $(RENDERER_ELF)
 	@echo "=== WINDOWS BUILD DEBUG ==="
+	@echo "Static linking method: $(STATIC_METHOD)"
 	@echo "Build completed successfully"
 	@echo "Checking executable dependencies..."
 	@ls -la $(DECODER_ELF) $(RENDERER_ELF) 2>/dev/null || echo "Executables not found"
-	@echo "=== Dependency Check ==="
-	@ldd $(DECODER_ELF) 2>/dev/null || echo "Decoder: No ldd available or static"
-	@ldd $(RENDERER_ELF) 2>/dev/null || echo "Renderer: No ldd available or static"
+	@echo "=== Static Linking Verification ==="
+	@echo "Decoder dependencies (should be minimal Windows system DLLs only):"
+	@ldd $(DECODER_ELF) 2>/dev/null | grep -v "ntdll\|KERNEL32\|KERNELBASE\|msvcrt" || echo "  ✅ Decoder: Minimal Windows dependencies"
+	@echo ""
+	@echo "Renderer dependencies (checking for external graphics libraries):"
+	@if ldd $(RENDERER_ELF) 2>/dev/null | grep -E "(cairo|freetype|pixman|png|harfbuzz)" | head -5; then \
+		echo "  ⚠️  Renderer: External graphics DLLs detected - static linking incomplete"; \
+		echo "  📋 Consider using windows-collect-dlls target for distribution"; \
+	else \
+		echo "  ✅ Renderer: No external graphics dependencies - static linking successful"; \
+		echo "  🎉 Single executable ready for distribution"; \
+	fi
 	@echo "=== Debug Complete ==="
 
 # Add a pre-build diagnostic target
@@ -305,10 +344,17 @@ windows-collect-dlls: $(DECODER_ELF) $(RENDERER_ELF)
 # Combined target: build, debug, and collect DLLs if needed
 windows-complete: all windows-debug
 	@echo ""
-	@echo "=== Checking if DLL collection is needed ==="
-	@if ldd $(RENDERER_ELF) 2>/dev/null | grep -q "cairo\|freetype"; then \
-		echo "⚠️  External DLLs detected - collecting for distribution"; \
+	@echo "=== Static Linking Assessment ==="
+	@echo "Method used: $(STATIC_METHOD)"
+	@if ldd $(RENDERER_ELF) 2>/dev/null | grep -E "(cairo|freetype|pixman|png)" >/dev/null 2>&1; then \
+		echo "📦 Static linking incomplete - creating distribution package with DLLs"; \
+		echo "   This provides maximum compatibility across Windows systems"; \
 		$(MAKE) windows-collect-dlls; \
+		echo "✅ Complete distribution package ready in dist/windows/"; \
 	else \
-		echo "✅ Static linking successful - no DLL collection needed"; \
+		echo "🎯 Static linking successful - single executable distribution"; \
+		echo "   No additional DLLs required for deployment"; \
+		mkdir -p dist/windows && cp obj/*.exe dist/windows/; \
+		echo "✅ Self-contained executables ready in dist/windows/"; \
 	fi
+

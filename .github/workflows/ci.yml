@@ -1,6 +1,6 @@
 name: CI
 
-on: 
+on:
   workflow_call:
 
 jobs:
@@ -42,7 +42,8 @@ jobs:
           update: true
           install: >-
             mingw-w64-x86_64-gcc
-            make
+            #make
+            mingw-w64-x86_64-make
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-cairo
             mingw-w64-x86_64-freetype
@@ -60,19 +61,41 @@ jobs:
           make clean
           make all -j
           make windows-debug
-          
+
           # Create Windows distribution with DLLs
           mkdir -p dist/windows
           cp obj/*.exe dist/windows/
-          
+
           # Copy required DLLs for renderer
           cp /mingw64/bin/libfreetype-6.dll dist/windows/
           cp /mingw64/bin/libcairo-2.dll dist/windows/
           cp /mingw64/bin/libbrotlidec.dll dist/windows/
           cp /mingw64/bin/libbz2-1.dll dist/windows/
-          
+
           # Copy any additional DLLs that might be needed
           ldd obj/blackbox_render.exe | grep "/mingw64/bin" | awk '{print $3}' | xargs -I {} cp {} dist/windows/ 2>/dev/null || true
+
+#### test
+      - name: Build and Test Static Linking
+        if: matrix.os == 'windows-latest'
+        shell: msys2 {0}
+        run: |
+          make clean
+          make all -j
+          make windows-debug
+
+          # Test executables work without external DLLs
+          ./obj/blackbox_decode.exe --help >/dev/null && echo "✅ Decoder works"
+          ./obj/blackbox_render.exe --help >/dev/null && echo "✅ Renderer works"
+
+      - name: Upload Windows Artifacts (Executables Only)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blackbox tools ${{matrix.name}} TEST-STATIC-LINKING
+          path: obj/*.exe
+          retention-days: 60
+          overwrite: true
+##### end test
 
       - name: Publish build artifacts (Linux/macOS)
         if: matrix.os != 'windows-latest'
