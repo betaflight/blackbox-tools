@@ -6,6 +6,13 @@
 #include <errno.h>
 #include <fcntl.h>
 
+#ifdef WIN32
+    #include <sys/stat.h>
+#else
+    #include <sys/stat.h>
+    #include <unistd.h>
+#endif
+
 //For msvcrt to define M_PI:
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -1150,6 +1157,12 @@ int decodeFlightLog(flightLog_t *log, const char *filename, int logIndex)
             // For output directory, we need just the basename
             if (options.outputDir) {
                 const char *lastSlash = strrchr(options.outputPrefix, '/');
+#ifdef WIN32
+                const char *lastBackslash = strrchr(options.outputPrefix, '\\');
+                if (lastBackslash && (!lastSlash || lastBackslash > lastSlash)) {
+                    lastSlash = lastBackslash;
+                }
+#endif
                 if (lastSlash) {
                     baseNamePrefix = lastSlash + 1;
                     baseNamePrefixLen = strlen(baseNamePrefix);
@@ -1175,6 +1188,12 @@ int decodeFlightLog(flightLog_t *log, const char *filename, int logIndex)
             // Extract just the basename if we have an output directory
             if (options.outputDir) {
                 lastSlash = strrchr(filename, '/');
+#ifdef WIN32
+                const char *lastBackslash = strrchr(filename, '\\');
+                if (lastBackslash && (!lastSlash || lastBackslash > lastSlash)) {
+                    lastSlash = lastBackslash;
+                }
+#endif
                 if (lastSlash) {
                     baseNamePrefix = lastSlash + 1;
                     baseNamePrefixLen = logNameEnd - baseNamePrefix;
@@ -1187,6 +1206,20 @@ int decodeFlightLog(flightLog_t *log, const char *filename, int logIndex)
                 outputPrefixLen = logNameEnd - outputPrefix;
                 baseNamePrefix = outputPrefix;
                 baseNamePrefixLen = outputPrefixLen;
+            }
+        }
+
+        // Validate output directory if specified
+        if (options.outputDir) {
+            if (strlen(options.outputDir) == 0) {
+                fprintf(stderr, "Output directory cannot be empty\n");
+                return -1;
+            }
+            
+            struct stat st;
+            if (stat(options.outputDir, &st) != 0 || !S_ISDIR(st.st_mode)) {
+                fprintf(stderr, "Output directory '%s' does not exist or is not a directory\n", options.outputDir);
+                return -1;
             }
         }
 
