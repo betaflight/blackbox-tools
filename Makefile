@@ -35,10 +35,19 @@ BIN_DIR		 = $(ROOT)/obj
 IS_WINDOWS := $(if $(findstring MINGW,$(shell uname -s)),MINGW,$(if $(findstring MSYS,$(shell uname -s)),MSYS,$(if $(findstring CYGWIN,$(shell uname -s)),CYGWIN,)))
 
 # Package config variables for better maintainability
-CAIRO_CFLAGS    := $(shell pkg-config --cflags cairo)
-CAIRO_LDFLAGS   := $(shell pkg-config --libs cairo)
-FREETYPE_CFLAGS := $(shell pkg-config --cflags freetype2)
-FREETYPE_LDFLAGS:= $(shell pkg-config --libs freetype2)
+ifneq (,$(IS_WINDOWS))
+	# Windows - pkg-config may not be available, set empty defaults
+	CAIRO_CFLAGS    := 
+	CAIRO_LDFLAGS   := 
+	FREETYPE_CFLAGS := 
+	FREETYPE_LDFLAGS := 
+else
+	# Unix-like systems - use pkg-config
+	CAIRO_CFLAGS    := $(shell pkg-config --cflags cairo)
+	CAIRO_LDFLAGS   := $(shell pkg-config --libs cairo)
+	FREETYPE_CFLAGS := $(shell pkg-config --cflags freetype2)
+	FREETYPE_LDFLAGS := $(shell pkg-config --libs freetype2)
+endif
 
 # Source files common to all targets
 COMMON_SRC	 = parser.c tools.c platform.c stream.c decoders.c units.c blackbox_fielddefs.c

@@ -206,7 +206,19 @@ if(WIN32 AND MSVC)
     find_package(PNG REQUIRED)
     find_package(EXPAT REQUIRED)
     
-    list(APPEND ALL_CAIRO_LIBS ${ZLIB_LIBRARIES} ${BZIP2_LIBRARIES} ${PNG_LIBRARIES} ${EXPAT_LIBRARIES})
+    # Only add libraries that were actually found
+    if(ZLIB_FOUND AND ZLIB_LIBRARIES)
+        list(APPEND ALL_CAIRO_LIBS ${ZLIB_LIBRARIES})
+    endif()
+    if(BZIP2_FOUND AND BZIP2_LIBRARIES)
+        list(APPEND ALL_CAIRO_LIBS ${BZIP2_LIBRARIES})
+    endif()
+    if(PNG_FOUND AND PNG_LIBRARIES)
+        list(APPEND ALL_CAIRO_LIBS ${PNG_LIBRARIES})
+    endif()
+    if(EXPAT_FOUND AND EXPAT_LIBRARIES)
+        list(APPEND ALL_CAIRO_LIBS ${EXPAT_LIBRARIES})
+    endif()
     
     # CRITICAL FIX: Set include directories multiple ways to ensure MSVC finds headers
     set(VCPKG_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/installed/x64-windows-static/include")
