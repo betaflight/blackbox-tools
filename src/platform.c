@@ -1,11 +1,12 @@
 #include "platform.h"
 
+#include <stdint.h>
+
 #ifdef WIN32
     #include <direct.h>
 #else
     #include <sys/stat.h>
     #include <stdlib.h>
-    #include <stdint.h>
 #endif
 
 
@@ -33,7 +34,7 @@
         DWORD result;
 
         //Call the original thread routine with the original data and return that as our result
-        result = (DWORD) (unwrapped->threadFunc(unwrapped->data));
+        result = (DWORD) (uintptr_t) (unwrapped->threadFunc(unwrapped->data));
 
         free(unwrapped);
 
@@ -138,7 +139,7 @@ bool mmap_file(fileMapping_t *mapping, int fd)
                 return false;
             }
 
-            mapping->data = MapViewOfFile(mapping->mapping, FILE_MAP_READ, 0, 0, mapping->stats.st_size);
+            mapping->data = MapViewOfFile(mapping->mapping, FILE_MAP_READ, 0, 0, (SIZE_T)mapping->stats.st_size);
 
             if (mapping->data == NULL) {
                 CloseHandle(mapping->mapping);

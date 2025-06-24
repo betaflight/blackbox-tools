@@ -31,8 +31,23 @@ SRC_DIR		 = $(ROOT)/src
 OBJECT_DIR	 = $(ROOT)/obj
 BIN_DIR		 = $(ROOT)/obj
 
+# Platform detection
+IS_WINDOWS := $(if $(findstring MINGW,$(shell uname -s)),MINGW,$(if $(findstring MSYS,$(shell uname -s)),MSYS,$(if $(findstring CYGWIN,$(shell uname -s)),CYGWIN,)))
+
+# Package config variables for better maintainability
+CAIRO_CFLAGS    := $(shell pkg-config --cflags cairo)
+CAIRO_LDFLAGS   := $(shell pkg-config --libs cairo)
+FREETYPE_CFLAGS := $(shell pkg-config --cflags freetype2)
+FREETYPE_LDFLAGS:= $(shell pkg-config --libs freetype2)
+
 # Source files common to all targets
 COMMON_SRC	 = parser.c tools.c platform.c stream.c decoders.c units.c blackbox_fielddefs.c
+
+# Platform-specific sources
+ifneq (,$(IS_WINDOWS))
+	COMMON_SRC += lib/getopt_mb_uni/getopt.c
+endif
+
 DECODER_SRC	 = $(COMMON_SRC) blackbox_decode.c gpxwriter.c imu.c battery.c stats.c
 RENDERER_SRC = $(COMMON_SRC) blackbox_render.c datapoints.c embeddedfont.c expo.c imu.c
 ENCODER_TESTBED_SRC = $(COMMON_SRC) encoder_testbed.c encoder_testbed_io.c
@@ -43,6 +58,11 @@ ENCODER_TESTBED_SRC = $(COMMON_SRC) encoder_testbed.c encoder_testbed_io.c
 
 # Search path for baseflight sources
 VPATH		:= $(SRC_DIR)
+
+# Add Windows-specific source paths
+ifneq (,$(IS_WINDOWS))
+	VPATH := $(VPATH):$(ROOT)/lib/getopt_mb_uni
+endif
 
 ###############################################################################
 # Things that might need changing to use different tools
@@ -70,23 +90,29 @@ CFLAGS		= $(ARCH_FLAGS) \
 		$(if $(strip $(BLACKBOX_VERSION)), -DBLACKBOX_VERSION=$(BLACKBOX_VERSION)) \
 		$(DEBUG_FLAGS) \
 		-std=gnu99 \
-		-pthread \
 		-Wall -pedantic -Wextra -Wshadow
 
-CFLAGS += `pkg-config --cflags cairo` `pkg-config --cflags freetype2`
-
-ifeq ($(BUILD_STATIC), MACOSX)
-	# For cairo built with ./configure --enable-quartz=no  --without-x --enable-pdf=no --enable-ps=no --enable-script=no --enable-xcb=no --enable-ft=yes --enable-fc=no --enable-xlib=no
-	LDFLAGS += -Llib/macosx -lcairo -lpixman-1 -lpng16 -lz -lfreetype -lbz2
+# Platform-specific configuration
+ifneq (,$(IS_WINDOWS))
+	# Windows/MINGW build
+	INCLUDE_DIRS += $(ROOT)/lib/getopt_mb_uni
+	CFLAGS += $(addprefix -I,$(INCLUDE_DIRS))
+	RENDERER_CFLAGS = $(CFLAGS) $(CAIRO_CFLAGS) $(FREETYPE_CFLAGS)
+	RENDERER_LDFLAGS = $(CAIRO_LDFLAGS) $(FREETYPE_LDFLAGS) -lm
+	LDFLAGS += -lm
 else
-	# Dynamic linking
-	LDFLAGS += `pkg-config --libs cairo` `pkg-config --libs freetype2`
+	# Unix-like systems (Linux, macOS)
+	CFLAGS += -pthread
+	RENDERER_CFLAGS = $(CFLAGS) $(CAIRO_CFLAGS) $(FREETYPE_CFLAGS)
+	ifeq ($(BUILD_STATIC), MACOSX)
+		# For cairo built with ./configure --enable-quartz=no  --without-x --enable-pdf=no --enable-ps=no --enable-script=no --enable-xcb=no --enable-ft=yes --enable-fc=no --enable-xlib=no
+		RENDERER_LDFLAGS = -Llib/macosx -lcairo -lpixman-1 -lpng16 -lz -lfreetype -lbz2 -lm -pthread
+	else
+		# Dynamic linking
+		RENDERER_LDFLAGS = $(CAIRO_LDFLAGS) $(FREETYPE_LDFLAGS) -lm -pthread
+	endif
+	LDFLAGS += -lm -pthread
 endif
-
-LDFLAGS += -lm
-
-# Required with GCC. Clang warns when using flag while linking, so you can comment this line out if you're using clang:
-LDFLAGS += -pthread
 
 
 ###############################################################################
@@ -109,16 +135,39 @@ TARGET_MAP   = $(OBJECT_DIR)/blackbox_decode.map
 
 all : $(DECODER_ELF) $(RENDERER_ELF) $(ENCODER_TESTBED_ELF)
 
+# Simplified linking rules
 $(DECODER_ELF):  $(DECODER_OBJS)
 	@$(CC) -o $@ $^ $(LDFLAGS)
 
 $(RENDERER_ELF):  $(RENDERER_OBJS)
-	@$(CC) -o $@ $^ $(LDFLAGS)
+	@$(CC) -o $@ $^ $(RENDERER_LDFLAGS)
 
 $(ENCODER_TESTBED_ELF): $(ENCODER_TESTBED_OBJS)
 	@$(CC) -o $@ $^ $(LDFLAGS)
 
-# Compile
+# Compile - separate rules for renderer files vs. other files
+# Renderer-specific files that need graphics headers
+$(OBJECT_DIR)/blackbox_render.o: blackbox_render.c
+	@mkdir -p $(dir $@)
+	@echo %% $(notdir $<) [with graphics headers]
+	@$(CC) -c -o $@ $(RENDERER_CFLAGS) $<
+
+$(OBJECT_DIR)/datapoints.o: datapoints.c
+	@mkdir -p $(dir $@)
+	@echo %% $(notdir $<) [with graphics headers]
+	@$(CC) -c -o $@ $(RENDERER_CFLAGS) $<
+
+$(OBJECT_DIR)/embeddedfont.o: embeddedfont.c
+	@mkdir -p $(dir $@)
+	@echo %% $(notdir $<) [with graphics headers]
+	@$(CC) -c -o $@ $(RENDERER_CFLAGS) $<
+
+$(OBJECT_DIR)/expo.o: expo.c
+	@mkdir -p $(dir $@)
+	@echo %% $(notdir $<) [with graphics headers]
+	@$(CC) -c -o $@ $(RENDERER_CFLAGS) $<
+
+# All other files use standard CFLAGS (no graphics headers)
 $(OBJECT_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	@echo %% $(notdir $<)
@@ -134,3 +183,9 @@ help:
 	@echo "Usage:"
 	@echo "        make [OPTIONS=\"<options>\"]"
 	@echo ""
+	@echo "Targets:"
+	@echo "        all                      # Build all executables (default)"
+	@echo "        clean                    # Clean build artifacts"
+	@echo "        help                     # Show this help"
+	@echo ""
+

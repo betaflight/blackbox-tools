@@ -12,8 +12,22 @@
     #include <dispatch/dispatch.h>
 #elif defined(WIN32)
     #include <windows.h>
+    #include <sys/stat.h>
+    #include <io.h>
+    #include <time.h>
+    // Windows compatibility defines
+    #ifndef S_IFMT
+    #define S_IFMT   0170000
+    #endif
+    #ifndef S_IFREG
+    #define S_IFREG  0100000
+    #endif
+    #ifndef S_IFCHR
+    #define S_IFCHR  0020000
+    #endif
 #else
     #include <semaphore.h>
+    #include <time.h>
 #endif
 
 #ifndef WIN32

@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 //For msvcrt to define M_PI:
 #define _USE_MATH_DEFINES
@@ -293,14 +294,17 @@ static void identifyFields(flightLog_t * log, uint8_t frameType, flightLogFrameD
 }
 
 static time_t parseDateTime(char* fieldValue) {
-	int year, month, day;
+	int year, month, day, hour, min, sec;
 	struct tm parsedTime;
-	if(sscanf(fieldValue, "%d-%d-%dT%d:%d:%d", &year, &month, &day, &parsedTime.tm_hour, &parsedTime.tm_min, &parsedTime.tm_sec) != EOF){
+	if(sscanf(fieldValue, "%d-%d-%dT%d:%d:%d", &year, &month, &day, &hour, &min, &sec) != EOF){
 		// tm_year is years since 1900
 		parsedTime.tm_year = year - 1900;
 		// tm_months is months since january
 		parsedTime.tm_mon = month - 1;
 		parsedTime.tm_mday = day;
+		parsedTime.tm_hour = hour;
+		parsedTime.tm_min = min;
+		parsedTime.tm_sec = sec;
 		parsedTime.tm_isdst = 0; //Ignore daylight savings time for GPS time
 	}
 	return mktime(&parsedTime);;
