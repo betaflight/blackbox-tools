@@ -5,11 +5,9 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
-#ifdef WIN32
-    #include <sys/stat.h>
-#else
-    #include <sys/stat.h>
+#ifndef WIN32
     #include <unistd.h>
 #endif
 
@@ -41,6 +39,22 @@
 #include "stats.h"
 
 #define MIN_GPS_SATELLITES 5
+
+/**
+ * Find the last path separator in a string (either '/' or '\' on Windows).
+ * Returns a pointer to the last path separator, or NULL if none found.
+ */
+static const char *findLastPathSeparator(const char *path)
+{
+    const char *lastSlash = strrchr(path, '/');
+#ifdef WIN32
+    const char *lastBackslash = strrchr(path, '\\');
+    if (lastBackslash && (!lastSlash || lastBackslash > lastSlash)) {
+        lastSlash = lastBackslash;
+    }
+#endif
+    return lastSlash;
+}
 
 typedef struct decodeOptions_t {
     int help, raw, limits, debug, toStdout;
@@ -1156,13 +1170,7 @@ int decodeFlightLog(flightLog_t *log, const char *filename, int logIndex)
             
             // For output directory, we need just the basename
             if (options.outputDir) {
-                const char *lastSlash = strrchr(options.outputPrefix, '/');
-#ifdef WIN32
-                const char *lastBackslash = strrchr(options.outputPrefix, '\\');
-                if (lastBackslash && (!lastSlash || lastBackslash > lastSlash)) {
-                    lastSlash = lastBackslash;
-                }
-#endif
+                const char *lastSlash = findLastPathSeparator(options.outputPrefix);
                 if (lastSlash) {
                     baseNamePrefix = lastSlash + 1;
                     baseNamePrefixLen = strlen(baseNamePrefix);
@@ -1187,13 +1195,7 @@ int decodeFlightLog(flightLog_t *log, const char *filename, int logIndex)
 
             // Extract just the basename if we have an output directory
             if (options.outputDir) {
-                lastSlash = strrchr(filename, '/');
-#ifdef WIN32
-                const char *lastBackslash = strrchr(filename, '\\');
-                if (lastBackslash && (!lastSlash || lastBackslash > lastSlash)) {
-                    lastSlash = lastBackslash;
-                }
-#endif
+                lastSlash = findLastPathSeparator(filename);
                 if (lastSlash) {
                     baseNamePrefix = lastSlash + 1;
                     baseNamePrefixLen = logNameEnd - baseNamePrefix;
