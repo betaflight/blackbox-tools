@@ -95,21 +95,53 @@ typedef enum FlightLogFieldSign {
     FLIGHT_LOG_FIELD_SIGNED   = 1
 } FlightLogFieldSign;
 
-typedef enum {
-    ANGLE_MODE      = (1 << 0),
-    HORIZON_MODE    = (1 << 1),
-    MAG_MODE        = (1 << 2),
-    BARO_MODE       = (1 << 3),
-    GPS_HOME_MODE   = (1 << 4),
-    GPS_HOLD_MODE   = (1 << 5),
-    HEADFREE_MODE   = (1 << 6),
-    UNUSED_MODE     = (1 << 7), // old autotune
-    PASSTHRU_MODE   = (1 << 8),
-    RANGEFINDER_MODE= (1 << 9),
-    FAILSAFE_MODE   = (1 << 10)
-} flightModeFlags_e;
+// Flight mode flags - using uint64_t to support all 42 modes cleanly
+typedef uint64_t flightModeFlags_t;
 
-#define FLIGHT_LOG_FLIGHT_MODE_COUNT 10
+#define ARM_MODE                    (1ULL << 0)
+#define ANGLE_MODE                  (1ULL << 1)
+#define HORIZON_MODE                (1ULL << 2)
+#define MAG_MODE                    (1ULL << 3)
+#define ALTHOLD_MODE                (1ULL << 4)
+#define HEADFREE_MODE               (1ULL << 5)
+#define CHIRP_MODE                  (1ULL << 6)
+#define PASSTHRU_MODE               (1ULL << 7)
+#define FAILSAFE_MODE               (1ULL << 8)
+#define POSHOLD_MODE                (1ULL << 9)
+#define GPSRESCUE_MODE              (1ULL << 10)
+#define ANTIGRAVITY_MODE            (1ULL << 11)
+#define HEADADJ_MODE                (1ULL << 12)
+#define CAMSTAB_MODE                (1ULL << 13)
+#define BEEPER_MODE                 (1ULL << 14)
+#define LEDLOW_MODE                 (1ULL << 15)
+#define CALIB_MODE                  (1ULL << 16)
+#define OSD_MODE                    (1ULL << 17)
+#define TELEMETRY_MODE              (1ULL << 18)
+#define SERVO1_MODE                 (1ULL << 19)
+#define SERVO2_MODE                 (1ULL << 20)
+#define SERVO3_MODE                 (1ULL << 21)
+#define BLACKBOX_MODE               (1ULL << 22)
+#define AIRMODE_MODE                (1ULL << 23)
+#define THREED_MODE                 (1ULL << 24)
+#define FPVANGLEMIX_MODE            (1ULL << 25)
+#define BLACKBOXERASE_MODE          (1ULL << 26)
+#define CAMERA1_MODE                (1ULL << 27)
+#define CAMERA2_MODE                (1ULL << 28)
+#define CAMERA3_MODE                (1ULL << 29)
+#define FLIPOVERAFTERCRASH_MODE     (1ULL << 30)
+#define PREARM_MODE                 (1ULL << 31)
+#define BEEPGPSCOUNT_MODE           (1ULL << 32)
+#define VTXPITMODE_MODE             (1ULL << 33)
+#define USER1_MODE                  (1ULL << 34)
+#define USER2_MODE                  (1ULL << 35)
+#define USER3_MODE                  (1ULL << 36)
+#define USER4_MODE                  (1ULL << 37)
+#define PIDAUDIO_MODE               (1ULL << 38)
+#define ACROTRAINER_MODE            (1ULL << 39)
+#define VTXCONTROLDISABLE_MODE      (1ULL << 40)
+#define LAUNCHCONTROL_MODE          (1ULL << 41)
+
+#define FLIGHT_LOG_FLIGHT_MODE_COUNT 42
 
 extern const char * const FLIGHT_LOG_FLIGHT_MODE_NAME[];
 

@@ -1,17 +1,48 @@
 #include "blackbox_fielddefs.h"
 
 const char * const FLIGHT_LOG_FLIGHT_MODE_NAME[] = {
-    "ANGLE_MODE",
-    "HORIZON_MODE",
+    "ARM",
+    "ANGLE",
+    "HORIZON",
     "MAG",
-    "BARO",
-    "GPS_HOME",
-    "GPS_HOLD",
+    "ALTHOLD",
     "HEADFREE",
-    "UNUSED",
+    "CHIRP",
     "PASSTHRU",
-    "RANGEFINDER_MODE",
-    "FAILSAFE_MODE"
+    "FAILSAFE",
+    "POSHOLD",
+    "GPSRESCUE",
+    "ANTIGRAVITY",
+    "HEADADJ",
+    "CAMSTAB",
+    "BEEPER",
+    "LEDLOW",
+    "CALIB",
+    "OSD",
+    "TELEMETRY",
+    "SERVO1",
+    "SERVO2",
+    "SERVO3",
+    "BLACKBOX",
+    "AIRMODE",
+    "3D",
+    "FPVANGLEMIX",
+    "BLACKBOXERASE",
+    "CAMERA1",
+    "CAMERA2",
+    "CAMERA3",
+    "FLIPOVERAFTERCRASH",
+    "PREARM",
+    "BEEPGPSCOUNT",
+    "VTXPITMODE",
+    "USER1",
+    "USER2",
+    "USER3",
+    "USER4",
+    "PIDAUDIO",
+    "ACROTRAINER",
+    "VTXCONTROLDISABLE",
+    "LAUNCHCONTROL"
 };
 
 const char * const FLIGHT_LOG_FLIGHT_STATE_NAME[] = {
@@ -26,7 +57,7 @@ const char * const FLIGHT_LOG_FAILSAFE_PHASE_NAME[] = {
     "IDLE",
     "RX_LOSS_DETECTED",
     "LANDING",
-    "LANDED"
+    "LANDED",
     "FAILSAFE_RX_LOSS_MONITORING",
     "FAILSAFE_RX_LOSS_RECOVERED"
 };
