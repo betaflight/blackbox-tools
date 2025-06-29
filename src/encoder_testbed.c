@@ -757,11 +757,6 @@ void parseCommandlineOptions(int argc, char **argv)
             break;
 
         switch (c) {
-            case 0:
-                /* If this option set a flag, do nothing else now. */
-                if (long_options[option_index].flag != 0)
-                    break;
-                break;
             case 'h':
                 printUsage(argv[0]);
                 exit(0);
