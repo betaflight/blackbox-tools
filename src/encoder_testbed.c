@@ -716,23 +716,23 @@ void onFrameReady(flightLog_t *fl, bool frameValid, int64_t *frame, uint8_t fram
 
 static void printUsage(const char *argv0)
 {
-    fprintf(stderr, "Usage: %s [options] <logfile>\n", argv0);
-    fprintf(stderr, "\n");
-    fprintf(stderr, "This tool reads in a flight log and re-encodes it using a private copy of the encoder.\n");
-    fprintf(stderr, "This allows experiments to be run on improving the encoder's efficiency, and allows\n");
-    fprintf(stderr, "any changes to the encoder to be verified (by comparing decoded logs against the\n");
-    fprintf(stderr, "ones produced by the original encoder).\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "The <logfile> should be a binary flight data log, typically with a .bbl or .bfl extension.\n");
-    fprintf(stderr, "The file extension is not strictly checked and is case-insensitive.\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  --debug    Enable debug output.\n");
-    fprintf(stderr, "  --help     Display this help message and exit.\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Example:\n");
-    fprintf(stderr, "  %s INPUT.bbl > OUTPUT.bbl\n", argv0);
-    fprintf(stderr, "\n");
+    fprintf(stdout, "Usage: %s [options] <logfile>\n", argv0);
+    fprintf(stdout, "\n");
+    fprintf(stdout, "This tool reads in a flight log and re-encodes it using a private copy of the encoder.\n");
+    fprintf(stdout, "This allows experiments to be run on improving the encoder's efficiency, and allows\n");
+    fprintf(stdout, "any changes to the encoder to be verified (by comparing decoded logs against the\n");
+    fprintf(stdout, "ones produced by the original encoder).\n");
+    fprintf(stdout, "\n");
+    fprintf(stdout, "The <logfile> should be a binary flight data log, typically with a .bbl or .bfl extension.\n");
+    fprintf(stdout, "The file extension is not strictly checked and is case-insensitive.\n");
+    fprintf(stdout, "\n");
+    fprintf(stdout, "Options:\n");
+    fprintf(stdout, "  --debug    Enable debug output.\n");
+    fprintf(stdout, "  --help     Display this help message and exit.\n");
+    fprintf(stdout, "\n");
+    fprintf(stdout, "Example:\n");
+    fprintf(stdout, "  %s INPUT.bbl > OUTPUT.bbl\n", argv0);
+    fprintf(stdout, "\n");
 
 }
 
