@@ -733,7 +733,6 @@ static void printUsage(const char *argv0)
     fprintf(stdout, "Example:\n");
     fprintf(stdout, "  %s INPUT.bbl > OUTPUT.bbl\n", argv0);
     fprintf(stdout, "\n");
-
 }
 
 void parseCommandlineOptions(int argc, char **argv)
