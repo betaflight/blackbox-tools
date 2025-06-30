@@ -38,7 +38,13 @@
 #include "units.h"
 #include "stats.h"
 
+
 #define MIN_GPS_SATELLITES 5
+
+// Function prototype for extractBaseNamePrefix (must be before any use)
+static void extractBaseNamePrefix(const char *filename, const char *logNameEnd, bool hasOutputDir,
+                                  const char **outBaseNamePrefix, int *outBaseNamePrefixLen,
+                                  const char **outOutputPrefix, int *outOutputPrefixLen);
 
 /**
  * Find the last path separator in a string (either '/' or '\' on Windows).
@@ -1165,52 +1171,22 @@ int decodeFlightLog(flightLog_t *log, const char *filename, int logIndex)
         int baseNamePrefixLen;
 
         if (options.outputPrefix) {
-            outputPrefix = options.outputPrefix;
-            outputPrefixLen = strlen(options.outputPrefix);
-            
-            // For output directory, we need just the basename
-            if (options.outputDir) {
-                const char *lastSlash = findLastPathSeparator(options.outputPrefix);
-                if (lastSlash) {
-                    baseNamePrefix = lastSlash + 1;
-                    baseNamePrefixLen = strlen(baseNamePrefix);
-                } else {
-                    baseNamePrefix = options.outputPrefix;
-                    baseNamePrefixLen = outputPrefixLen;
-                }
-            } else {
-                baseNamePrefix = outputPrefix;
-                baseNamePrefixLen = outputPrefixLen;
-            }
+            const char *logNameEnd = options.outputPrefix + strlen(options.outputPrefix);
+            extractBaseNamePrefix(options.outputPrefix, logNameEnd, options.outputDir != NULL,
+                                 &baseNamePrefix, &baseNamePrefixLen,
+                                 &outputPrefix, &outputPrefixLen);
         } else {
             const char *fileExtensionPeriod = strrchr(filename, '.');
             const char *logNameEnd;
-            const char *lastSlash;
-
             if (fileExtensionPeriod) {
                 logNameEnd = fileExtensionPeriod;
             } else {
                 logNameEnd = filename + strlen(filename);
             }
-
-            // Extract just the basename if we have an output directory
-            if (options.outputDir) {
-                lastSlash = findLastPathSeparator(filename);
-                if (lastSlash) {
-                    baseNamePrefix = lastSlash + 1;
-                    baseNamePrefixLen = logNameEnd - baseNamePrefix;
-                } else {
-                    baseNamePrefix = filename;
-                    baseNamePrefixLen = logNameEnd - filename;
-                }
-            } else {
-                outputPrefix = filename;
-                outputPrefixLen = logNameEnd - outputPrefix;
-                baseNamePrefix = outputPrefix;
-                baseNamePrefixLen = outputPrefixLen;
-            }
+            extractBaseNamePrefix(filename, logNameEnd, options.outputDir != NULL,
+                                 &baseNamePrefix, &baseNamePrefixLen,
+                                 &outputPrefix, &outputPrefixLen);
         }
-
         // Validate output directory if specified
         if (options.outputDir) {
             if (strlen(options.outputDir) == 0) {
@@ -1589,6 +1565,7 @@ void parseCommandlineOptions(int argc, char **argv)
     }
 }
 
+
 int main(int argc, char **argv)
 {
     flightLog_t *log;
@@ -1647,4 +1624,37 @@ int main(int argc, char **argv)
     }
 
     return 0;
+}
+
+/**
+ * Extract base name prefix from a filename based on output directory settings
+ * @param filename The input filename to process
+ * @param logNameEnd Pointer to the end of the log name (before extension)
+ * @param hasOutputDir Whether an output directory is specified
+ * @param outBaseNamePrefix Pointer to store the base name prefix
+ * @param outBaseNamePrefixLen Pointer to store the base name prefix length
+ * @param outOutputPrefix Pointer to store the output prefix
+ * @param outOutputPrefixLen Pointer to store the output prefix length
+ */
+static void extractBaseNamePrefix(const char *filename, const char *logNameEnd, bool hasOutputDir,
+                                  const char **outBaseNamePrefix, int *outBaseNamePrefixLen,
+                                  const char **outOutputPrefix, int *outOutputPrefixLen) {
+    const char *lastSlash;
+    if (hasOutputDir) {
+        lastSlash = findLastPathSeparator(filename);
+        if (lastSlash) {
+            if (outBaseNamePrefix) *outBaseNamePrefix = lastSlash + 1;
+            if (outBaseNamePrefixLen) *outBaseNamePrefixLen = logNameEnd - (lastSlash + 1);
+        } else {
+            if (outBaseNamePrefix) *outBaseNamePrefix = filename;
+            if (outBaseNamePrefixLen) *outBaseNamePrefixLen = logNameEnd - filename;
+        }
+        if (outOutputPrefix) *outOutputPrefix = NULL;
+        if (outOutputPrefixLen) *outOutputPrefixLen = 0;
+    } else {
+        if (outOutputPrefix) *outOutputPrefix = filename;
+        if (outOutputPrefixLen) *outOutputPrefixLen = logNameEnd - filename;
+        if (outBaseNamePrefix) *outBaseNamePrefix = filename;
+        if (outBaseNamePrefixLen) *outBaseNamePrefixLen = logNameEnd - filename;
+    }
 }
