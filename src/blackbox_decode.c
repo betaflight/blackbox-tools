@@ -1643,18 +1643,18 @@ static void extractBaseNamePrefix(const char *filename, const char *logNameEnd, 
     if (hasOutputDir) {
         lastSlash = findLastPathSeparator(filename);
         if (lastSlash) {
-            *outBaseNamePrefix = lastSlash + 1;
-            *outBaseNamePrefixLen = logNameEnd - *outBaseNamePrefix;
+            if (outBaseNamePrefix) *outBaseNamePrefix = lastSlash + 1;
+            if (outBaseNamePrefixLen) *outBaseNamePrefixLen = logNameEnd - (lastSlash + 1);
         } else {
-            *outBaseNamePrefix = filename;
-            *outBaseNamePrefixLen = logNameEnd - filename;
+            if (outBaseNamePrefix) *outBaseNamePrefix = filename;
+            if (outBaseNamePrefixLen) *outBaseNamePrefixLen = logNameEnd - filename;
         }
         if (outOutputPrefix) *outOutputPrefix = NULL;
         if (outOutputPrefixLen) *outOutputPrefixLen = 0;
     } else {
-        *outOutputPrefix = filename;
-        *outOutputPrefixLen = logNameEnd - *outOutputPrefix;
-        *outBaseNamePrefix = *outOutputPrefix;
-        *outBaseNamePrefixLen = *outOutputPrefixLen;
+        if (outOutputPrefix) *outOutputPrefix = filename;
+        if (outOutputPrefixLen) *outOutputPrefixLen = logNameEnd - filename;
+        if (outBaseNamePrefix) *outBaseNamePrefix = filename;
+        if (outBaseNamePrefixLen) *outBaseNamePrefixLen = logNameEnd - filename;
     }
 }
