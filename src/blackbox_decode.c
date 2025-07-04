@@ -212,7 +212,7 @@ static bool fprintfMainFieldInUnit(flightLog_t *log, FILE *file, int fieldIndex,
             return true;
         case UNIT_VOLTS:
             // Betaflight already does the ADC conversion
-            fprintf(file, "%.1f", (double) fieldValue / 10);
+            fprintf(file, "%.2f", (double) fieldValue / 100);
             return true;
         case UNIT_MILLIAMPS:
             // Betaflight already does the ADC conversion
