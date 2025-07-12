@@ -200,6 +200,10 @@ static void fprintfMicrosecondsInUnit(FILE *file, int64_t microseconds, Unit uni
     }
 }
 
+// Forward declarations for firmware version comparison
+static const char* getSemver(flightLog_t *log);
+static bool semverGte(const char *currentVersion, const char *targetVersion);
+
 static bool fprintfMainFieldInUnit(flightLog_t *log, FILE *file, int fieldIndex, int64_t fieldValue, Unit unit)
 {
     /* Convert the fieldValue to the given unit based on the original unit of the field (that we decide on by looking
@@ -493,13 +497,79 @@ int getMajorVersion(flightLog_t *log)
 }
 
 /**
+ * Get the firmware semantic version as a string (e.g., "4.3.0")
+ * Returns the version string or NULL if version is unknown/invalid
+ */
+const char* getSemver(flightLog_t *log)
+{
+    if (!log->private->fcVersion[0]) {
+        return NULL; //Unknown version
+    }
+    return log->private->fcVersion;
+}
+
+/**
+ * Compare firmware semantic version against a target version string
+ * Returns: true if firmware >= target, false if firmware < target or version unknown
+ */
+bool semverGte(const char *currentVersion, const char *targetVersion)
+{
+    if (!currentVersion || !targetVersion) {
+        return false; //Unknown version
+    }
+    
+    // Parse current version
+    char currentVersionCopy[30];
+    strcpy(currentVersionCopy, currentVersion);
+    
+    char *currentMajorStr = strtok(currentVersionCopy, ".");
+    char *currentMinorStr = strtok(NULL, ".");
+    char *currentPatchStr = strtok(NULL, ".");
+    
+    if (!currentMajorStr || !currentMinorStr || !currentPatchStr) {
+        return false; //Invalid current version format
+    }
+    
+    int currentMajor = atoi(currentMajorStr);
+    int currentMinor = atoi(currentMinorStr);
+    int currentPatch = atoi(currentPatchStr);
+    
+    // Parse target version
+    char targetVersionCopy[30];
+    strcpy(targetVersionCopy, targetVersion);
+    
+    char *targetMajorStr = strtok(targetVersionCopy, ".");
+    char *targetMinorStr = strtok(NULL, ".");
+    char *targetPatchStr = strtok(NULL, ".");
+    
+    if (!targetMajorStr || !targetMinorStr || !targetPatchStr) {
+        return false; //Invalid target version format
+    }
+    
+    int targetMajor = atoi(targetMajorStr);
+    int targetMinor = atoi(targetMinorStr);
+    int targetPatch = atoi(targetPatchStr);
+    
+    // Compare versions
+    if (currentMajor > targetMajor) return true;
+    if (currentMajor < targetMajor) return false;
+    
+    if (currentMinor > targetMinor) return true;
+    if (currentMinor < targetMinor) return false;
+    
+    if (currentPatch >= targetPatch) return true;
+    
+    return false;
+}
+
+/**
  * Get altitude in [m] including optional user altitude offset.
  * Note: Betaflight before version 4 logged altitude in [cm], since Betaflight 4 it use [dm].
  */
 float getAltitude(flightLog_t *log, int64_t *frame)
 {
-    int majorFcVersion = getMajorVersion(log);
-    float unitFactor = majorFcVersion < 4 ? 0.01 : 0.1; //The logged altitude was changed from centimeter to decimeter since Betaflight 4.0.0.RC1
+    // The logged altitude was changed from centimeter to decimeter since Betaflight 4.0.0.RC1
+    float unitFactor = semverGte(getSemver(log), "4.0.0") ? 0.1 : 0.01;
     return frame[log->gpsFieldIndexes.GPS_altitude] * unitFactor
             + options.altOffset; //Change [cm] to [m] for gpx format
 }
