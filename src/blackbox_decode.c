@@ -213,7 +213,12 @@ static bool fprintfMainFieldInUnit(flightLog_t *log, FILE *file, int fieldIndex,
             return true;
         case UNIT_VOLTS:
             // Betaflight already does the ADC conversion
-            fprintf(file, "%.1f", (double) fieldValue / 10);
+            // vbat scaling changed in firmware 4.3.0 - use different scaling for older versions
+            if (semver_gte_string(log->private->fcVersion, "4.3.0")) {
+                fprintf(file, "%.2f", (double) fieldValue / 100);
+            } else {
+                fprintf(file, "%.1f", (double) fieldValue / 10);
+            }
             return true;
         case UNIT_MILLIAMPS:
             // Betaflight already does the ADC conversion
