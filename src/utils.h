@@ -12,13 +12,14 @@ const char *findLastPathSeparator(const char *path);
 
 /**
  * Extract base name prefix from a filename based on output directory settings
- * @param filename The input filename to process
- * @param logNameEnd Pointer to the end of the log name (before extension)
+ * @param filename The input filename to process (must not be NULL)
+ * @param logNameEnd Pointer to the end of the log name (must not be NULL and >= filename)
  * @param hasOutputDir Whether an output directory is specified
- * @param outBaseNamePrefix Pointer to store the base name prefix
- * @param outBaseNamePrefixLen Pointer to store the base name prefix length
- * @param outOutputPrefix Pointer to store the output prefix
- * @param outOutputPrefixLen Pointer to store the output prefix length
+ * @param outBaseNamePrefix Pointer to store the base name prefix (can be NULL)
+ * @param outBaseNamePrefixLen Pointer to store the base name prefix length (can be NULL)
+ * @param outOutputPrefix Pointer to store the output prefix (can be NULL)
+ * @param outOutputPrefixLen Pointer to store the output prefix length (can be NULL)
+ * @note If invalid input is provided, all output parameters are set to NULL/0 and function returns early
  */
 void extractBaseNamePrefix(const char *filename, const char *logNameEnd, bool hasOutputDir,
                           const char **outBaseNamePrefix, int *outBaseNamePrefixLen,

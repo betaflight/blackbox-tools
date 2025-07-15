@@ -30,6 +30,16 @@ const char *findLastPathSeparator(const char *path)
 void extractBaseNamePrefix(const char *filename, const char *logNameEnd, bool hasOutputDir,
                           const char **outBaseNamePrefix, int *outBaseNamePrefixLen,
                           const char **outOutputPrefix, int *outOutputPrefixLen) {
+    // Input validation: ensure pointers are valid and logNameEnd >= filename
+    if (!filename || !logNameEnd || logNameEnd < filename) {
+        // Set all outputs to safe defaults
+        if (outBaseNamePrefix) *outBaseNamePrefix = NULL;
+        if (outBaseNamePrefixLen) *outBaseNamePrefixLen = 0;
+        if (outOutputPrefix) *outOutputPrefix = NULL;
+        if (outOutputPrefixLen) *outOutputPrefixLen = 0;
+        return;
+    }
+    
     const char *lastSlash;
     if (hasOutputDir) {
         lastSlash = findLastPathSeparator(filename);
