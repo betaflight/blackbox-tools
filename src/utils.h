@@ -6,7 +6,8 @@
 
 /**
  * Find the last path separator in a string (either '/' or '\' on Windows).
- * Returns a pointer to the last path separator, or NULL if none found.
+ * @param path The input path string to search (can be NULL)
+ * @return Pointer to the last path separator, or NULL if none found or path is NULL
  */
 const char *findLastPathSeparator(const char *path);
 

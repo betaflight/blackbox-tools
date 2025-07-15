@@ -7,6 +7,11 @@
  */
 const char *findLastPathSeparator(const char *path)
 {
+    // Input validation: return NULL if path is NULL
+    if (!path) {
+        return NULL;
+    }
+    
     const char *lastSlash = strrchr(path, '/');
 #ifdef WIN32
     const char *lastBackslash = strrchr(path, '\\');
