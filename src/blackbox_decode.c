@@ -32,6 +32,7 @@
 #include "parser.h"
 #include "platform.h"
 #include "tools.h"
+#include "utils.h"
 #include "gpxwriter.h"
 #include "imu.h"
 #include "battery.h"
@@ -39,23 +40,8 @@
 #include "stats.h"
 #include "semver.h"
 
-#define MIN_GPS_SATELLITES 5
 
-/**
- * Find the last path separator in a string (either '/' or '\' on Windows).
- * Returns a pointer to the last path separator, or NULL if none found.
- */
-static const char *findLastPathSeparator(const char *path)
-{
-    const char *lastSlash = strrchr(path, '/');
-#ifdef WIN32
-    const char *lastBackslash = strrchr(path, '\\');
-    if (lastBackslash && (!lastSlash || lastBackslash > lastSlash)) {
-        lastSlash = lastBackslash;
-    }
-#endif
-    return lastSlash;
-}
+#define MIN_GPS_SATELLITES 5
 
 typedef struct decodeOptions_t {
     int help, raw, limits, debug, toStdout;
@@ -1159,52 +1145,22 @@ int decodeFlightLog(flightLog_t *log, const char *filename, int logIndex)
         int baseNamePrefixLen;
 
         if (options.outputPrefix) {
-            outputPrefix = options.outputPrefix;
-            outputPrefixLen = strlen(options.outputPrefix);
-            
-            // For output directory, we need just the basename
-            if (options.outputDir) {
-                const char *lastSlash = findLastPathSeparator(options.outputPrefix);
-                if (lastSlash) {
-                    baseNamePrefix = lastSlash + 1;
-                    baseNamePrefixLen = strlen(baseNamePrefix);
-                } else {
-                    baseNamePrefix = options.outputPrefix;
-                    baseNamePrefixLen = outputPrefixLen;
-                }
-            } else {
-                baseNamePrefix = outputPrefix;
-                baseNamePrefixLen = outputPrefixLen;
-            }
+            const char *logNameEnd = options.outputPrefix + strlen(options.outputPrefix);
+            extractBaseNamePrefix(options.outputPrefix, logNameEnd, options.outputDir != NULL,
+                                 &baseNamePrefix, &baseNamePrefixLen,
+                                 &outputPrefix, &outputPrefixLen);
         } else {
             const char *fileExtensionPeriod = strrchr(filename, '.');
             const char *logNameEnd;
-            const char *lastSlash;
-
             if (fileExtensionPeriod) {
                 logNameEnd = fileExtensionPeriod;
             } else {
                 logNameEnd = filename + strlen(filename);
             }
-
-            // Extract just the basename if we have an output directory
-            if (options.outputDir) {
-                lastSlash = findLastPathSeparator(filename);
-                if (lastSlash) {
-                    baseNamePrefix = lastSlash + 1;
-                    baseNamePrefixLen = logNameEnd - baseNamePrefix;
-                } else {
-                    baseNamePrefix = filename;
-                    baseNamePrefixLen = logNameEnd - filename;
-                }
-            } else {
-                outputPrefix = filename;
-                outputPrefixLen = logNameEnd - outputPrefix;
-                baseNamePrefix = outputPrefix;
-                baseNamePrefixLen = outputPrefixLen;
-            }
+            extractBaseNamePrefix(filename, logNameEnd, options.outputDir != NULL,
+                                 &baseNamePrefix, &baseNamePrefixLen,
+                                 &outputPrefix, &outputPrefixLen);
         }
-
         // Validate output directory if specified
         if (options.outputDir) {
             if (strlen(options.outputDir) == 0) {
@@ -1582,6 +1538,7 @@ void parseCommandlineOptions(int argc, char **argv)
         }
     }
 }
+
 
 int main(int argc, char **argv)
 {
