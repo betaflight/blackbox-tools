@@ -37,6 +37,7 @@
 #include "battery.h"
 #include "units.h"
 #include "stats.h"
+#include "semver.h"
 
 #define MIN_GPS_SATELLITES 5
 
@@ -482,15 +483,7 @@ void outputGPSFields(flightLog_t *log, FILE *file, int64_t *frame)
     }
 }
 
-int getMajorVersion(flightLog_t *log)
-{
-    if (!log->private->fcVersion[0]) {
-        return -1; //Unknown version
-    }
-    char fcVersion[30];
-    strcpy(fcVersion, log->private->fcVersion);
-    return atoi(strtok(fcVersion, "."));
-}
+
 
 /**
  * Get altitude in [m] including optional user altitude offset.
@@ -498,8 +491,9 @@ int getMajorVersion(flightLog_t *log)
  */
 float getAltitude(flightLog_t *log, int64_t *frame)
 {
-    int majorFcVersion = getMajorVersion(log);
-    float unitFactor = majorFcVersion < 4 ? 0.01 : 0.1; //The logged altitude was changed from centimeter to decimeter since Betaflight 4.0.0.RC1
+    // The logged altitude was changed from centimeter to decimeter since Betaflight 4.0.0.RC1
+    const char *fcVersion = log->private->fcVersion[0] ? log->private->fcVersion : NULL;
+    float unitFactor = semver_gte_string(fcVersion, "4.0.0") ? 0.1 : 0.01;
     return frame[log->gpsFieldIndexes.GPS_altitude] * unitFactor
             + options.altOffset; //Change [cm] to [m] for gpx format
 }
