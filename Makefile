@@ -50,7 +50,7 @@ else
 endif
 
 # Source files common to all targets
-COMMON_SRC	 = parser.c tools.c platform.c stream.c decoders.c units.c blackbox_fielddefs.c
+COMMON_SRC	 = parser.c tools.c platform.c stream.c decoders.c units.c blackbox_fielddefs.c semver.c utils.c
 
 # Platform-specific sources
 ifneq (,$(IS_WINDOWS))

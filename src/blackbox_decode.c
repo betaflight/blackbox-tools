@@ -5,6 +5,11 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/stat.h>
+
+#ifndef WIN32
+    #include <unistd.h>
+#endif
 
 //For msvcrt to define M_PI:
 #define _USE_MATH_DEFINES
@@ -27,11 +32,14 @@
 #include "parser.h"
 #include "platform.h"
 #include "tools.h"
+#include "utils.h"
 #include "gpxwriter.h"
 #include "imu.h"
 #include "battery.h"
 #include "units.h"
 #include "stats.h"
+#include "semver.h"
+
 
 #define MIN_GPS_SATELLITES 5
 
@@ -44,6 +52,7 @@ typedef struct decodeOptions_t {
     int simulateCurrentMeter;
     int mergeGPS;
     const char *outputPrefix;
+    const char *outputDir;
 
     bool overrideSimCurrentMeterOffset, overrideSimCurrentMeterScale;
     int16_t simCurrentMeterOffset, simCurrentMeterScale;
@@ -68,6 +77,7 @@ decodeOptions_t options = {
     .simCurrentMeterOffset = 0, .simCurrentMeterScale = 0,
 
     .outputPrefix = NULL,
+    .outputDir = NULL,
 
     .unitGPSSpeed = UNIT_METERS_PER_SECOND,
     .unitFrameTime = UNIT_MICROSECONDS,
@@ -189,7 +199,12 @@ static bool fprintfMainFieldInUnit(flightLog_t *log, FILE *file, int fieldIndex,
             return true;
         case UNIT_VOLTS:
             // Betaflight already does the ADC conversion
-            fprintf(file, "%.1f", (double) fieldValue / 10);
+            // vbat scaling changed in firmware 4.3.0 - use different scaling for older versions
+            if (semver_gte_string(log->private->fcVersion, "4.3.0")) {
+                fprintf(file, "%.2f", (double) fieldValue / 100);
+            } else {
+                fprintf(file, "%.1f", (double) fieldValue / 10);
+            }
             return true;
         case UNIT_MILLIAMPS:
             // Betaflight already does the ADC conversion
@@ -459,15 +474,7 @@ void outputGPSFields(flightLog_t *log, FILE *file, int64_t *frame)
     }
 }
 
-int getMajorVersion(flightLog_t *log)
-{
-    if (!log->private->fcVersion[0]) {
-        return -1; //Unknown version
-    }
-    char fcVersion[30];
-    strcpy(fcVersion, log->private->fcVersion);
-    return atoi(strtok(fcVersion, "."));
-}
+
 
 /**
  * Get altitude in [m] including optional user altitude offset.
@@ -475,8 +482,9 @@ int getMajorVersion(flightLog_t *log)
  */
 float getAltitude(flightLog_t *log, int64_t *frame)
 {
-    int majorFcVersion = getMajorVersion(log);
-    float unitFactor = majorFcVersion < 4 ? 0.01 : 0.1; //The logged altitude was changed from centimeter to decimeter since Betaflight 4.0.0.RC1
+    // The logged altitude was changed from centimeter to decimeter since Betaflight 4.0.0.RC1
+    const char *fcVersion = log->private->fcVersion[0] ? log->private->fcVersion : NULL;
+    float unitFactor = semver_gte_string(fcVersion, "4.0.0") ? 0.1 : 0.01;
     return frame[log->gpsFieldIndexes.GPS_altitude] * unitFactor
             + options.altOffset; //Change [cm] to [m] for gpx format
 }
@@ -1138,49 +1146,109 @@ int decodeFlightLog(flightLog_t *log, const char *filename, int logIndex)
 
         const char *outputPrefix = 0;
         int outputPrefixLen;
+        const char *baseNamePrefix = 0;
+        int baseNamePrefixLen;
 
         if (options.outputPrefix) {
-            outputPrefix = options.outputPrefix;
-            outputPrefixLen = strlen(options.outputPrefix);
+            const char *logNameEnd = options.outputPrefix + strlen(options.outputPrefix);
+            extractBaseNamePrefix(options.outputPrefix, logNameEnd, options.outputDir != NULL,
+                                 &baseNamePrefix, &baseNamePrefixLen,
+                                 &outputPrefix, &outputPrefixLen);
         } else {
             const char *fileExtensionPeriod = strrchr(filename, '.');
             const char *logNameEnd;
-
             if (fileExtensionPeriod) {
                 logNameEnd = fileExtensionPeriod;
             } else {
                 logNameEnd = filename + strlen(filename);
             }
-
-            outputPrefix = filename;
-            outputPrefixLen = logNameEnd - outputPrefix;
+            extractBaseNamePrefix(filename, logNameEnd, options.outputDir != NULL,
+                                 &baseNamePrefix, &baseNamePrefixLen,
+                                 &outputPrefix, &outputPrefixLen);
+        }
+        // Validate output directory if specified
+        if (options.outputDir) {
+            if (strlen(options.outputDir) == 0) {
+                fprintf(stderr, "Output directory cannot be empty\n");
+                return -1;
+            }
+            
+            struct stat st;
+            if (stat(options.outputDir, &st) != 0 || !S_ISDIR(st.st_mode)) {
+                fprintf(stderr, "Output directory '%s' does not exist or is not a directory\n", options.outputDir);
+                return -1;
+            }
         }
 
-        filenameLen = outputPrefixLen + strlen(".00.csv") + 1;
+        // Calculate filename length including output directory if specified
+        int outputDirLen = options.outputDir ? strlen(options.outputDir) : 0;
+        int pathSeparatorLen = (options.outputDir && options.outputDir[outputDirLen-1] != '/') ? 1 : 0;
+
+        filenameLen = outputDirLen + pathSeparatorLen + baseNamePrefixLen + strlen(".00.csv") + 1;
         csvFilename = malloc(filenameLen * sizeof(char));
 
-        snprintf(csvFilename, filenameLen, "%.*s.%02d.csv", outputPrefixLen, outputPrefix, logIndex + 1);
+        if (options.outputDir) {
+            snprintf(csvFilename, filenameLen, "%s%s%.*s.%02d.csv", 
+                    options.outputDir, 
+                    pathSeparatorLen ? "/" : "",
+                    baseNamePrefixLen, baseNamePrefix, 
+                    logIndex + 1);
+        } else {
+            snprintf(csvFilename, filenameLen, "%.*s.%02d.csv", baseNamePrefixLen, baseNamePrefix, logIndex + 1);
+        }
 
-        filenameLen = outputPrefixLen + strlen(".00.gps.gpx") + 1;
+        filenameLen = outputDirLen + pathSeparatorLen + baseNamePrefixLen + strlen(".00.gps.gpx") + 1;
         gpxFilename = malloc(filenameLen * sizeof(char));
 
-        snprintf(gpxFilename, filenameLen, "%.*s.%02d.gps.gpx", outputPrefixLen, outputPrefix, logIndex + 1);
+        if (options.outputDir) {
+            snprintf(gpxFilename, filenameLen, "%s%s%.*s.%02d.gps.gpx", 
+                    options.outputDir,
+                    pathSeparatorLen ? "/" : "",
+                    baseNamePrefixLen, baseNamePrefix, 
+                    logIndex + 1);
+        } else {
+            snprintf(gpxFilename, filenameLen, "%.*s.%02d.gps.gpx", baseNamePrefixLen, baseNamePrefix, logIndex + 1);
+        }
 
-        filenameLen = outputPrefixLen + strlen(".00.gps.csv") + 1;
+        filenameLen = outputDirLen + pathSeparatorLen + baseNamePrefixLen + strlen(".00.gps.csv") + 1;
         gpsCsvFilename = malloc(filenameLen * sizeof(char));
 
-        snprintf(gpsCsvFilename, filenameLen, "%.*s.%02d.gps.csv", outputPrefixLen, outputPrefix, logIndex + 1);
+        if (options.outputDir) {
+            snprintf(gpsCsvFilename, filenameLen, "%s%s%.*s.%02d.gps.csv", 
+                    options.outputDir,
+                    pathSeparatorLen ? "/" : "",
+                    baseNamePrefixLen, baseNamePrefix, 
+                    logIndex + 1);
+        } else {
+            snprintf(gpsCsvFilename, filenameLen, "%.*s.%02d.gps.csv", baseNamePrefixLen, baseNamePrefix, logIndex + 1);
+        }
 
-        filenameLen = outputPrefixLen + strlen(".00.event") + 1;
+        filenameLen = outputDirLen + pathSeparatorLen + baseNamePrefixLen + strlen(".00.event") + 1;
         eventFilename = malloc(filenameLen * sizeof(char));
 
-        snprintf(eventFilename, filenameLen, "%.*s.%02d.event", outputPrefixLen, outputPrefix, logIndex + 1);
+        if (options.outputDir) {
+            snprintf(eventFilename, filenameLen, "%s%s%.*s.%02d.event", 
+                    options.outputDir,
+                    pathSeparatorLen ? "/" : "",
+                    baseNamePrefixLen, baseNamePrefix, 
+                    logIndex + 1);
+        } else {
+            snprintf(eventFilename, filenameLen, "%.*s.%02d.event", baseNamePrefixLen, baseNamePrefix, logIndex + 1);
+        }
 
         if (options.saveHeaders) {
-            filenameLen = outputPrefixLen + strlen(".00.headers.csv") + 1;
+            filenameLen = outputDirLen + pathSeparatorLen + baseNamePrefixLen + strlen(".00.headers.csv") + 1;
             headersFilename = malloc(filenameLen * sizeof(char));
 
-            snprintf(headersFilename, filenameLen, "%.*s.%02d.headers.csv", outputPrefixLen, outputPrefix, logIndex + 1);
+            if (options.outputDir) {
+                snprintf(headersFilename, filenameLen, "%s%s%.*s.%02d.headers.csv", 
+                        options.outputDir,
+                        pathSeparatorLen ? "/" : "",
+                        baseNamePrefixLen, baseNamePrefix, 
+                        logIndex + 1);
+            } else {
+                snprintf(headersFilename, filenameLen, "%.*s.%02d.headers.csv", baseNamePrefixLen, baseNamePrefix, logIndex + 1);
+            }
 
             headersFile = fopen(headersFilename, "wb");
             if (!headersFile) {
@@ -1281,6 +1349,7 @@ void printUsage(const char *argv0)
         "   --index <num>            Choose the log from the file that should be decoded (or omit to decode all)\n"
         "   --limits                 Print the limits and range of each field\n"
         "   --stdout                 Write log to stdout instead of to a file\n"
+        "   --output-dir <dir>       Directory to write output CSV files to (default: same as input file)\n"
         "   --unit-amperage <unit>   Current meter unit (raw|mA|A), default is A (amps)\n"
         "   --unit-flags <unit>      State flags unit (raw|flags), default is flags\n"
         "   --unit-frame-time <unit> Frame timestamp unit (us|s), default is us (microseconds)\n"
@@ -1336,6 +1405,7 @@ void parseCommandlineOptions(int argc, char **argv)
         SETTING_UNIT_FRAME_TIME,
         SETTING_UNIT_FLAGS,
         SETTING_ALT_OFFSET,
+        SETTING_OUTPUT_DIR,
     };
 
     while (1)
@@ -1358,6 +1428,7 @@ void parseCommandlineOptions(int argc, char **argv)
             {"declination-dec", required_argument, 0, SETTING_DECLINATION_DECIMAL},
             {"prefix", required_argument, 0, SETTING_PREFIX},
             {"index", required_argument, 0, SETTING_INDEX},
+            {"output-dir", required_argument, 0, SETTING_OUTPUT_DIR},
             {"unit-gps-speed", required_argument, 0, SETTING_UNIT_GPS_SPEED},
             {"unit-vbat", required_argument, 0, SETTING_UNIT_VBAT},
             {"unit-amperage", required_argument, 0, SETTING_UNIT_AMPERAGE},
@@ -1385,6 +1456,9 @@ void parseCommandlineOptions(int argc, char **argv)
             break;
             case SETTING_PREFIX:
                 options.outputPrefix = optarg;
+            break;
+            case SETTING_OUTPUT_DIR:
+                options.outputDir = optarg;
             break;
             case SETTING_UNIT_GPS_SPEED:
                 if (!unitFromName(optarg, &options.unitGPSSpeed)) {
@@ -1469,6 +1543,7 @@ void parseCommandlineOptions(int argc, char **argv)
         }
     }
 }
+
 
 int main(int argc, char **argv)
 {

@@ -714,6 +714,27 @@ void onFrameReady(flightLog_t *fl, bool frameValid, int64_t *frame, uint8_t fram
     }
 }
 
+static void printUsage(const char *argv0)
+{
+    fprintf(stdout, "Usage: %s [options] <logfile>\n", argv0);
+    fprintf(stdout, "\n");
+    fprintf(stdout, "This tool reads in a flight log and re-encodes it using a private copy of the encoder.\n");
+    fprintf(stdout, "This allows experiments to be run on improving the encoder's efficiency, and allows\n");
+    fprintf(stdout, "any changes to the encoder to be verified (by comparing decoded logs against the\n");
+    fprintf(stdout, "ones produced by the original encoder).\n");
+    fprintf(stdout, "\n");
+    fprintf(stdout, "The <logfile> should be a binary flight data log, typically with a .bbl or .bfl extension.\n");
+    fprintf(stdout, "The file extension is not strictly checked and is case-insensitive.\n");
+    fprintf(stdout, "\n");
+    fprintf(stdout, "Options:\n");
+    fprintf(stdout, "  --debug    Enable debug output.\n");
+    fprintf(stdout, "  --help     Display this help message and exit.\n");
+    fprintf(stdout, "\n");
+    fprintf(stdout, "Example:\n");
+    fprintf(stdout, "  %s INPUT.bbl > OUTPUT.bbl\n", argv0);
+    fprintf(stdout, "\n");
+}
+
 void parseCommandlineOptions(int argc, char **argv)
 {
     int c;
@@ -722,16 +743,28 @@ void parseCommandlineOptions(int argc, char **argv)
     {
         static struct option long_options[] = {
             {"debug", no_argument, &optionDebug, 1},
+            {"help",  no_argument, 0, 'h'},
             {0, 0, 0, 0}
         };
 
         int option_index = 0;
 
-        c = getopt_long (argc, argv, "", long_options, &option_index);
+        c = getopt_long(argc, argv, "h", long_options, &option_index);
 
         /* Detect the end of the options. */
         if (c == -1)
             break;
+
+        switch (c) {
+            case 'h':
+                printUsage(argv[0]);
+                exit(0);
+            case '?':
+                /* getopt_long already printed an error message. */
+                exit(1);
+            default:
+                break;
+        }
     }
 
     if (optind < argc)
@@ -1049,7 +1082,7 @@ int main(int argc, char **argv)
     parseCommandlineOptions(argc, argv);
 
     if (!optionFilename) {
-        fprintf(stderr, "Missing log filename argument\n");
+        printUsage(argv[0]);
         return -1;
     }
 
