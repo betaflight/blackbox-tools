@@ -1,7 +1,10 @@
 name: CI
 
-on: 
+on:
   workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -13,28 +16,60 @@ jobs:
           - name: Linux
             os: ubuntu-latest
 
-          - name: macOS
-            os: macos-13
+          - name: macOS (x86_64)
+            os: macos-15-intel
+
+          - name: macOS (arm64)
+            os: macos-15
+            extra_make_args: DEBUG=RELEASE DEBUG_FLAGS="" ARCH_FLAGS="-mcpu=apple-m1"
+
+          - name: Linux (arm64)
+            os: ubuntu-24.04-arm
+            extra_make_args: DEBUG=RELEASE DEBUG_FLAGS=""
+
+          - name: Windows (x86_64)
+            os: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Install dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libfreetype6-dev libcairo2-dev
 
       - name: Install dependencies (macOS)
-        if: matrix.os == 'macos-13'
+        if: runner.os == 'macOS'
         run: |
           brew install pkg-config freetype cairo
 
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            make
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-cairo
+            mingw-w64-x86_64-freetype
+
       - name: Build the tools
+        if: runner.os != 'Windows'
+        run: make all ${{ matrix.extra_make_args }}
+
+      - name: Build the tools (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
         run: make all
 
       - name: Publish build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Blackbox tools artifacts ${{matrix.name}}
           path: obj/*

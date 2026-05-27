@@ -1,0 +1,137 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.4.4)'
+        required: true
+      prerelease:
+        description: 'Mark as pre-release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            make_args: DEBUG=RELEASE DEBUG_FLAGS=""
+
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+            make_args: DEBUG=RELEASE DEBUG_FLAGS=""
+
+          - name: macos-x86_64
+            os: macos-15-intel
+            make_args: DEBUG=RELEASE DEBUG_FLAGS=""
+
+          - name: macos-arm64
+            os: macos-15
+            make_args: DEBUG=RELEASE DEBUG_FLAGS="" ARCH_FLAGS="-mcpu=apple-m1"
+
+          - name: windows-x86_64
+            os: windows-latest
+            make_args: DEBUG=RELEASE DEBUG_FLAGS=""
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          persist-credentials: false
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libfreetype6-dev libcairo2-dev
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install pkg-config freetype cairo
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            make
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-cairo
+            mingw-w64-x86_64-freetype
+
+      - name: Build
+        if: runner.os != 'Windows'
+        run: make all ${{ matrix.make_args }}
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: make all ${{ matrix.make_args }}
+
+      - name: Strip and package binaries
+        if: runner.os != 'Windows'
+        run: |
+          strip obj/blackbox_decode obj/blackbox_render obj/encoder_testbed
+          mkdir -p dist
+          cp obj/blackbox_decode  dist/blackbox_decode-${{ matrix.name }}
+          cp obj/blackbox_render  dist/blackbox_render-${{ matrix.name }}
+          cp obj/encoder_testbed  dist/encoder_testbed-${{ matrix.name }}
+
+      - name: Strip and package binaries (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          strip obj/blackbox_decode.exe obj/blackbox_render.exe obj/encoder_testbed.exe
+          mkdir -p dist
+          cp obj/blackbox_decode.exe  dist/blackbox_decode-${{ matrix.name }}.exe
+          cp obj/blackbox_render.exe  dist/blackbox_render-${{ matrix.name }}.exe
+          cp obj/encoder_testbed.exe  dist/encoder_testbed-${{ matrix.name }}.exe
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: blackbox-tools-${{ matrix.name }}
+          path: dist/
+          retention-days: 7
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lh release-artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+          generate_release_notes: true
+          files: release-artifacts/*
