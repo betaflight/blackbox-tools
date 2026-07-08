@@ -14,7 +14,7 @@ jobs:
             os: ubuntu-latest
 
           - name: macOS
-            os: macos-13
+            os: macos-15
 
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +26,7 @@ jobs:
           sudo apt-get install -y pkg-config libfreetype6-dev libcairo2-dev
 
       - name: Install dependencies (macOS)
-        if: matrix.os == 'macos-13'
+        if: matrix.os == 'macos-15'
         run: |
           brew install pkg-config freetype cairo
 
