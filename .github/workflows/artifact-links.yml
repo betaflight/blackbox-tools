@@ -4,6 +4,9 @@ on:
     workflows: ["PR"]
     types: [completed]
 
+permissions:
+  pull-requests: write
+
 jobs:
   artifacts-url-comments:
     name: Add artifact links to PR and issues
