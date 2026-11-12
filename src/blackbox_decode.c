@@ -318,6 +318,14 @@ void onEvent(flightLog_t *log, flightLogEvent_t *event)
             fprintf(eventFile, "{\"name\":\"Logging resume\", \"time\":%" PRId64 ", \"data\":{\"logIteration\":%d}}\n", event->data.loggingResume.currentTime,
                     event->data.loggingResume.logIteration);
         break;
+        case FLIGHT_LOG_EVENT_DISARM:
+            fprintf(eventFile, "{\"name\":\"Disarm\", \"time\":%" PRId64 ", \"data\":{\"reason\":%u}}\n", lastFrameTime,
+                    event->data.disarm.reason);
+        break;
+        case FLIGHT_LOG_EVENT_FLIGHTMODE:
+            fprintf(eventFile, "{\"name\":\"Flight mode\", \"time\":%" PRId64 ", \"data\":{\"flags\":%u,\"lastFlags\":%u}}\n", lastFrameTime,
+                    event->data.flightMode.flags, event->data.flightMode.lastFlags);
+        break;
         case FLIGHT_LOG_EVENT_LOG_END:
             fprintf(eventFile, "{\"name\":\"Log clean end\", \"time\":%" PRId64 "}\n", lastFrameTime);
         break;
