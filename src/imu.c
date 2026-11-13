@@ -50,10 +50,16 @@ void imuInit(void)
     fc_acc = (float) (0.5f / (M_PI * accz_lpf_cutoff)); // calculate RC time constant used in the accZ lpf
     invGyroComplimentaryFilter_M_Factor = (1.0f / (gyro_cmpfm_factor + 1.0f));
 
-    EstM.V.X = 1.0f;
+    // EstM is blended with real magADC samples via a complementary filter (like EstG is with accSmooth),
+    // so it must start at zero like EstG does. A nonzero seed here is an unrelated direction that the
+    // filter only washes out over ~gyro_cmpfm_factor samples, biasing the heading for hundreds of frames
+    // after the start of the log.
+    EstM.V.X = 0.0f;
     EstM.V.Y = 0.0f;
     EstM.V.Z = 0.0f;
 
+    // EstN has no absolute reference to blend towards (it's only ever rotated and renormalized), so unlike
+    // EstM it must start as a nonzero unit vector to have something to rotate.
     EstN.V.X = 1.0f;
     EstN.V.Y = 0.0f;
     EstN.V.Z = 0.0f;
