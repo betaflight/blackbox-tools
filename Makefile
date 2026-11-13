@@ -73,14 +73,15 @@ CFLAGS		= $(ARCH_FLAGS) \
 		-pthread \
 		-Wall -pedantic -Wextra -Wshadow
 
-CFLAGS += `pkg-config --cflags cairo` `pkg-config --cflags freetype2`
+# cairo and freetype are only needed by blackbox_render
+RENDERER_CFLAGS = `pkg-config --cflags cairo` `pkg-config --cflags freetype2`
 
 ifeq ($(BUILD_STATIC), MACOSX)
 	# For cairo built with ./configure --enable-quartz=no  --without-x --enable-pdf=no --enable-ps=no --enable-script=no --enable-xcb=no --enable-ft=yes --enable-fc=no --enable-xlib=no
-	LDFLAGS += -Llib/macosx -lcairo -lpixman-1 -lpng16 -lz -lfreetype -lbz2
+	RENDERER_LDFLAGS += -Llib/macosx -lcairo -lpixman-1 -lpng16 -lz -lfreetype -lbz2
 else
 	# Dynamic linking
-	LDFLAGS += `pkg-config --libs cairo` `pkg-config --libs freetype2`
+	RENDERER_LDFLAGS += `pkg-config --libs cairo` `pkg-config --libs freetype2`
 endif
 
 LDFLAGS += -lm
@@ -113,12 +114,17 @@ $(DECODER_ELF):  $(DECODER_OBJS)
 	@$(CC) -o $@ $^ $(LDFLAGS)
 
 $(RENDERER_ELF):  $(RENDERER_OBJS)
-	@$(CC) -o $@ $^ $(LDFLAGS)
+	@$(CC) -o $@ $^ $(LDFLAGS) $(RENDERER_LDFLAGS)
 
 $(ENCODER_TESTBED_ELF): $(ENCODER_TESTBED_OBJS)
 	@$(CC) -o $@ $^ $(LDFLAGS)
 
 # Compile
+$(OBJECT_DIR)/blackbox_render.o: blackbox_render.c
+	@mkdir -p $(dir $@)
+	@echo %% $(notdir $<)
+	@$(CC) -c -o $@ $(CFLAGS) $(RENDERER_CFLAGS) $<
+
 $(OBJECT_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	@echo %% $(notdir $<)
