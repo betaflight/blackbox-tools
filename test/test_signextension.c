@@ -31,7 +31,7 @@ int main(void)
 	}
 
 	for (int32_t i = -2; i < 2; i++) {
-		uint32_t u2 = i & 0x00FFFFFF;
+		uint32_t u2 = i & 0x03;
 
 		assert(i == signExtend2Bit(u2));
 	}
