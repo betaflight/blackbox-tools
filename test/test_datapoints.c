@@ -10,7 +10,7 @@
 int main(void)
 {
 	char *fieldNames[] = {"Test"};
-	int32_t val;
+	int64_t val;
 
 	//First some basic tests about locating frames
 	{
