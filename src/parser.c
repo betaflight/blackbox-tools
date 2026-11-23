@@ -809,6 +809,13 @@ static void parseEventFrame(flightLog_t *log, mmapStream_t *stream, bool raw)
             data->loggingResume.logIteration = streamReadUnsignedVB(stream);
             data->loggingResume.currentTime = streamReadUnsignedVB(stream) + log->private->timeRolloverAccumulator;
         break;
+        case FLIGHT_LOG_EVENT_DISARM:
+            data->disarm.reason = streamReadUnsignedVB(stream);
+        break;
+        case FLIGHT_LOG_EVENT_FLIGHTMODE:
+            data->flightMode.flags = streamReadUnsignedVB(stream);
+            data->flightMode.lastFlags = streamReadUnsignedVB(stream);
+        break;
         case FLIGHT_LOG_EVENT_LOG_END:
             streamRead(stream, endMessage, END_OF_LOG_MESSAGE_LEN);
 

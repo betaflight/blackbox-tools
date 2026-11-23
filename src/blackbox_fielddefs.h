@@ -144,6 +144,7 @@ typedef enum FlightLogEvent {
     FLIGHT_LOG_EVENT_SYNC_BEEP = 0,
     FLIGHT_LOG_EVENT_INFLIGHT_ADJUSTMENT = 13,
     FLIGHT_LOG_EVENT_LOGGING_RESUME = 14,
+    FLIGHT_LOG_EVENT_DISARM = 15,
     FLIGHT_LOG_EVENT_FLIGHTMODE = 30, // Add new event type for flight mode status.
     FLIGHT_LOG_EVENT_LOG_END = 255
 } FlightLogEvent;
@@ -163,11 +164,22 @@ typedef struct flightLogEvent_loggingResume_t {
     int64_t currentTime;
 } flightLogEvent_loggingResume_t;
 
+typedef struct flightLogEvent_disarm_t {
+    uint32_t reason;
+} flightLogEvent_disarm_t;
+
+typedef struct flightLogEvent_flightMode_t {
+    uint32_t flags;
+    uint32_t lastFlags;
+} flightLogEvent_flightMode_t;
+
 typedef union flightLogEventData_t
 {
     flightLogEvent_syncBeep_t syncBeep;
     flightLogEvent_inflightAdjustment_t inflightAdjustment;
     flightLogEvent_loggingResume_t loggingResume;
+    flightLogEvent_disarm_t disarm;
+    flightLogEvent_flightMode_t flightMode;
 } flightLogEventData_t;
 
 typedef struct flightLogEvent_t
