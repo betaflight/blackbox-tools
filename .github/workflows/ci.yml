@@ -68,6 +68,15 @@ jobs:
         shell: msys2 {0}
         run: make all
 
+      - name: Run the tests
+        if: runner.os != 'Windows'
+        run: make -C test check
+
+      - name: Run the tests (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: make -C test check
+
       - name: Publish build artifacts
         uses: actions/upload-artifact@v7
         with:
