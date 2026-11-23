@@ -20,8 +20,15 @@ clean:
 
 pframe_intervals: pframe_intervals.c
 
-test_datapoints: test_datapoints.c ../src/datapoints.c
+# Each test lists the header it includes, so a header change rebuilds it.
+# A header must not reach the compiler, so the recipe passes only the C files.
+LINK_C = $(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $(filter %.c,$^) $(LDLIBS) -o $@
 
-test_expocurve: test_expocurve.c ../src/expo.c
+test_datapoints: test_datapoints.c ../src/datapoints.c ../src/datapoints.h
+	$(LINK_C)
 
-test_signextension: test_signextension.c ../src/tools.c
+test_expocurve: test_expocurve.c ../src/expo.c ../src/expo.h
+	$(LINK_C)
+
+test_signextension: test_signextension.c ../src/tools.c ../src/tools.h
+	$(LINK_C)
