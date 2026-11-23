@@ -43,14 +43,16 @@ write("disarm.bbl", eframe(15, 2))
 write("flightmode.bbl", eframe(30, 0x01000001, 1))
 # flags=73 encodes to the single byte 0x49 ('I'), which collides with the I frame marker.
 write("desync.bbl", eframe(30, 73, 1))
+# flags with bit 31 set needs the fifth VB byte.
+write("highbit.bbl", eframe(30, 0x80000000, 1))
 PY
 
 fail=0
 check() {
     name=$1; pattern=$2
     "$DECODER" "$name.bbl" >/dev/null 2>&1 || { echo "FAIL $name: decoder exit status"; fail=1; return; }
-    rows=$(grep -c '^ *[0-9]' "$name.01.csv" || true)
-    [ "$rows" = 2 ] || { echo "FAIL $name: expected 2 data rows, got $rows"; fail=1; }
+    rows=$(grep -E '^ *[0-9]' "$name.01.csv" | tr -d ' ' | tr '\n' ' ')
+    [ "$rows" = "0,1000 1,2000 " ] || { echo "FAIL $name: expected rows '0,1000 1,2000', got '$rows'"; fail=1; }
     grep -qF "$pattern" "$name.01.event" || { echo "FAIL $name: event line missing: $pattern"; fail=1; }
     grep -qF '"Log clean end"' "$name.01.event" || { echo "FAIL $name: clean end missing"; fail=1; }
 }
@@ -58,6 +60,7 @@ check() {
 check disarm      '"name":"Disarm", "time":1000, "data":{"reason":2}'
 check flightmode  '"name":"Flight mode", "time":1000, "data":{"flags":16777217,"lastFlags":1}'
 check desync      '"name":"Flight mode", "time":1000, "data":{"flags":73,"lastFlags":1}'
+check highbit     '"name":"Flight mode", "time":1000, "data":{"flags":2147483648,"lastFlags":1}'
 
 [ "$fail" = 0 ] && echo "PASS test_events"
 exit "$fail"
