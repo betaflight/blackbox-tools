@@ -2,29 +2,7 @@
 #include <stdio.h>
 #include <assert.h>
 
-static int32_t signExtend24Bit(uint32_t u)
-{
-	//If sign bit is set, fill the top bits with 1s to sign-extend
-	return (u & 0x800000) ? (int32_t) (u | 0xFF000000) : u;
-}
-
-static int32_t signExtend6Bit(uint8_t byte)
-{
-	//If sign bit is set, fill the top bits with 1s to sign-extend
-	return (byte & 0x20) ? (int32_t) (int8_t) (byte | 0xC0) : byte;
-}
-
-static int32_t signExtend4Bit(uint8_t nibble)
-{
-	//If sign bit is set, fill the top bits with 1s to sign-extend
-	return (nibble & 0x08) ? (int32_t) (int8_t) (nibble | 0xF0) : nibble;
-}
-
-static int32_t signExtend2Bit(uint8_t byte)
-{
-	//If sign bit is set, fill the top bits with 1s to sign-extend
-	return (byte & 0x02) ? (int32_t) (int8_t) (byte | 0xFC) : byte;
-}
+#include "../src/tools.h"
 
 int main(void)
 {
@@ -32,6 +10,12 @@ int main(void)
 		uint32_t u24 = i & 0x00FFFFFF;
 
 		assert(i == signExtend24Bit(u24));
+	}
+
+	for (int32_t i = -8192; i < 8192; i++) {
+		uint16_t u14 = i & 0x3FFF;
+
+		assert(i == signExtend14Bit(u14));
 	}
 
 	for (int32_t i = -32; i < 32; i++) {

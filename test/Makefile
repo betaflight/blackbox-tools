@@ -24,4 +24,4 @@ test_datapoints: test_datapoints.c ../src/datapoints.c
 
 test_expocurve: test_expocurve.c ../src/expo.c
 
-test_signextension: test_signextension.c
+test_signextension: test_signextension.c ../src/tools.c
