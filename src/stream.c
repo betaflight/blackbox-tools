@@ -59,7 +59,7 @@ uint32_t streamReadUnsignedVB(mmapStream_t *stream)
             return 0;
         }
 
-        result = result | ((c & ~0x80) << shift);
+        result = result | ((uint32_t)(c & ~0x80) << shift);
 
         //Final byte?
         if (c < 128) {
