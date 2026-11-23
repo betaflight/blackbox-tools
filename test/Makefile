@@ -21,8 +21,8 @@ clean:
 pframe_intervals: pframe_intervals.c
 
 # Each test lists the header it includes, so a header change rebuilds it.
-# A header must not reach the compiler, so the recipe passes only the C files.
-LINK_C = $(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $(filter %.c,$^) $(LDLIBS) -o $@
+# Only the .c prerequisites are passed to the compiler.
+LINK_C = $(LINK.c) $(filter %.c,$^) $(LDLIBS) -o $@
 
 test_datapoints: test_datapoints.c ../src/datapoints.c ../src/datapoints.h
 	$(LINK_C)
